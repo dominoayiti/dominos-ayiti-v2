@@ -101,30 +101,63 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
 useEffect(() => {
   const checkPendingPayment = async () => {
     const pendingOrder = localStorage.getItem('pendingMonCashOrder');
-    
-    if (pendingOrder) {
-      const orderData = JSON.parse(pendingOrder);
-      console.log('🔍 Paiement en attente détecté:', orderData);
 
-      const isExpired = (Date.now() - orderData.timestamp) > 10 * 60 * 1000;
-      
-      if (isExpired) {
-        localStorage.removeItem('pendingMonCashOrder');
-        return;
-      }
+    if (!pendingOrder) return;
 
-      const shouldVerify = window.confirm(
-        `Ou te kòmanse yon peman MonCash pou ${orderData.tokens} jetons.\n\nÈske ou fini peye? Klike OK pou verifye.`
+    const orderData = JSON.parse(pendingOrder);
+    console.log('🔍 Paiement en attente détecté:', orderData);
+
+    const isExpired = (Date.now() - orderData.timestamp) > 10 * 60 * 1000;
+    if (isExpired) {
+      localStorage.removeItem('pendingMonCashOrder');
+      return;
+    }
+
+    const shouldVerify = window.confirm(
+      `Ou te kòmanse yon peman MonCash pou ${orderData.tokens} jetons.\n\nÈske ou fini peye? Klike OK pou verifye.`
+    );
+
+    if (!shouldVerify) return;
+
+    setIsProcessing(true);
+    setProcessingMessage('Verifikasyon peman...');
+
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/api/moncash/verify-payment`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: orderData.orderId })
+        }
       );
 
-      if (shouldVerify) {
-        await verifyPayment(orderData.orderId);
+      const data = await response.json();
+
+      if (data.success) {
+        localStorage.removeItem('pendingMonCashOrder');
+        alert(
+          `🎉 Felisitasyon!\n\n${data.tokens} jetons ajoute.\n\nNouvo balans: ${data.newBalance}`
+        );
+        onClose();
+      } else if (data.status === 'pending') {
+        alert('⏳ Peman toujou an tretman.');
+      } else {
+        alert('❌ Peman pa reyisi.');
+        localStorage.removeItem('pendingMonCashOrder');
       }
+    } catch (error) {
+      console.error('❌ Erreur vérification:', error);
+      alert(`Erè verifikasyon!\n\n${error.message}`);
+    } finally {
+      setIsProcessing(false);
+      setProcessingMessage('');
     }
   };
 
   checkPendingPayment();
-}, [verifyPayment]); // ✅ Ajoutez verifyPayment ici
+}, []); // ✅ dépendances vides
+
 
   // 🆕 Fonction pour vérifier un paiement
   const verifyPayment = async (orderId) => {
