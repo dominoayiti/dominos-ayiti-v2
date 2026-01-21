@@ -7,7 +7,7 @@ import { ref, onValue, update, push, remove, set } from 'firebase/database';
 // ============================================
 // CONFIGURATION - CHANGEZ L'URL DE VOTRE BACKEND ICI
 // ============================================
-const BACKEND_URL = 'http://localhost:3001';
+const BACKEND_URL = 'https://dominos-ayiti-v2.onrender.com';
 
 const TokenRechargeModal = ({ onClose, currentTokens }) => {
   const { currentUser, userData } = useAuth();
