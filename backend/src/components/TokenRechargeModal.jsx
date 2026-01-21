@@ -5,7 +5,7 @@ import { Coins, X, Loader } from 'lucide-react';
 // ============================================
 // CONFIGURATION API - Changez l'URL selon votre serveur
 // ============================================
-const API_URL = 'http://localhost:3001'; // URL de votre backend
+const BACKEND_URL = 'https://dominos-ayiti-v2.onrender.com'; // URL de votre backend
 
 const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
   const [selectedAmount, setSelectedAmount] = useState(null);

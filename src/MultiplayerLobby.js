@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Wifi, WifiOff, UserPlus, UserMinus, Gamepad2, Coins, User, LogOut, ArrowLeft, Search, X, Plus, DollarSign, MessageCircle, Send, Bell, Check, Loader } from 'lucide-react';
 import { useAuth } from './useAuth';
 import { database } from './firebase-config';
-import { ref, onValue, update, push, remove, set } from 'firebase/database';
+import { ref, onValue, update, remove, set } from 'firebase/database';
 
 // ============================================
 // CONFIGURATION - CHANGEZ L'URL DE VOTRE BACKEND ICI
@@ -98,33 +98,33 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
   };
 
   // 🆕 Vérifier les paiements en attente au chargement
-  useEffect(() => {
-    const checkPendingPayment = async () => {
-      const pendingOrder = localStorage.getItem('pendingMonCashOrder');
+useEffect(() => {
+  const checkPendingPayment = async () => {
+    const pendingOrder = localStorage.getItem('pendingMonCashOrder');
+    
+    if (pendingOrder) {
+      const orderData = JSON.parse(pendingOrder);
+      console.log('🔍 Paiement en attente détecté:', orderData);
+
+      const isExpired = (Date.now() - orderData.timestamp) > 10 * 60 * 1000;
       
-      if (pendingOrder) {
-        const orderData = JSON.parse(pendingOrder);
-        console.log('🔍 Paiement en attente détecté:', orderData);
-
-        const isExpired = (Date.now() - orderData.timestamp) > 10 * 60 * 1000;
-        
-        if (isExpired) {
-          localStorage.removeItem('pendingMonCashOrder');
-          return;
-        }
-
-        const shouldVerify = window.confirm(
-          `Ou te kòmanse yon peman MonCash pou ${orderData.tokens} jetons.\n\nÈske ou fini peye? Klike OK pou verifye.`
-        );
-
-        if (shouldVerify) {
-          await verifyPayment(orderData.orderId);
-        }
+      if (isExpired) {
+        localStorage.removeItem('pendingMonCashOrder');
+        return;
       }
-    };
 
-    checkPendingPayment();
-  }, []);
+      const shouldVerify = window.confirm(
+        `Ou te kòmanse yon peman MonCash pou ${orderData.tokens} jetons.\n\nÈske ou fini peye? Klike OK pou verifye.`
+      );
+
+      if (shouldVerify) {
+        await verifyPayment(orderData.orderId);
+      }
+    }
+  };
+
+  checkPendingPayment();
+}, [verifyPayment]); // ✅ Ajoutez verifyPayment ici
 
   // 🆕 Fonction pour vérifier un paiement
   const verifyPayment = async (orderId) => {
@@ -283,6 +283,7 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
 const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   const [requests, setRequests] = useState([]);
   const [processing, setProcessing] = useState(false);
+  const previousRequestsLength = useRef(0); // ✅ Ajoutez cette ligne
 
   useEffect(() => {
     if (!currentUser) return;
@@ -296,17 +297,19 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
           ...value
         }));
         setRequests(requestsList);
+        previousRequestsLength.current = requestsList.length; // ✅ Mettez à jour la ref
       } else {
-        setRequests([]);
         // Fermer automatiquement le modal s'il n'y a plus de demandes
-        if (requests.length > 0) {
+        if (previousRequestsLength.current > 0) { // ✅ Utilisez la ref
           onClose();
         }
+        setRequests([]);
+        previousRequestsLength.current = 0; // ✅ Reset la ref
       }
     });
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, onClose]); // ✅ Seulement currentUser et onClose
 
   const acceptRequest = async (request) => {
     if (processing) return;
