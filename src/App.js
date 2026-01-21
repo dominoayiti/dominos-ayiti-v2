@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, Trophy, Users, Coins } from 'lucide-react'; 
 import MultiplayerAuth from './MultiplayerMenuComponent';
 import MultiplayerMenu from './MultiplayerLobby';
 import { useAuth } from './useAuth';
 
+
 const DominoGame = () => {
   const [gameState, setGameState] = useState('menu');
   const [playerTokens, setPlayerTokens] = useState(1000);
-  //const [opponentTokens, setOpponentTokens] = useState(1000);
+  const [opponentTokens, setOpponentTokens] = useState(1000);
   const [currentBet, setCurrentBet] = useState(50);
   const [playerHand, setPlayerHand] = useState([]);
   const [opponentHand, setOpponentHand] = useState([]);
@@ -19,7 +20,7 @@ const DominoGame = () => {
   const [showError, setShowError] = useState(false);
   const [passCount, setPassCount] = useState(0);
 
-  //const { currentUser, userData, loading, logout } = useAuth();
+  const { currentUser, userData, loading, logout } = useAuth();
 
   const createDominoSet = () => {
     const dominos = [];

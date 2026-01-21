@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Users, Wifi, WifiOff, UserPlus, UserMinus, Gamepad2, Coins, User, LogOut, ArrowLeft, Search, X, Plus, DollarSign, MessageCircle, Send, Bell, Check, Loader } from 'lucide-react';
 import { useAuth } from './useAuth';
 import { database } from './firebase-config';
