@@ -9,8 +9,8 @@ import { ref, onValue, update, remove, set } from 'firebase/database';
 // ============================================
 //const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'https://dominos-ayiti-v2.onrender.com';
 
-const BACKEND_URL = 'https://dominos-ayiti-v2.onrender.com';
-const TokenRechargeModal = ({ onClose, currentTokens }) => {
+  const BACKEND_URL = 'https://dominos-ayiti-v2.onrender.com';
+  const TokenRechargeModal = ({ onClose, currentTokens }) => {
   const { currentUser, userData } = useAuth();
   const [selectedAmount, setSelectedAmount] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -156,45 +156,10 @@ useEffect(() => {
   };
 
   checkPendingPayment();
-}, []); // ✅ dépendances vides
+}, [onClose]); // ✅ dépendances vides
 
 
-  // 🆕 Fonction pour vérifier un paiement
-  const verifyPayment = async (orderId) => {
-    setIsProcessing(true);
-    setProcessingMessage('Verifikasyon peman...');
-
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/moncash/verify-payment`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ orderId })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        localStorage.removeItem('pendingMonCashOrder');
-        alert(`🎉 Felisitasyon!\n\n${data.tokens} jetons ajoute nan kont ou.\n\nNouvo balans: ${data.newBalance} jetons`);
-        onClose();
-      } else {
-        if (data.status === 'pending') {
-          alert('⏳ Peman ou toujou nan trete.\n\nTanpri tann yon ti moman epi eseye ankò.');
-        } else {
-          alert('❌ Peman pa reyisi.\n\nEseye ankò oswa kontakte asistans.');
-          localStorage.removeItem('pendingMonCashOrder');
-        }
-      }
-    } catch (error) {
-      console.error('❌ Erreur vérification:', error);
-      alert(`Erè verifikasyon!\n\n${error.message}`);
-    } finally {
-      setIsProcessing(false);
-      setProcessingMessage('');
-    }
-  };
+  
 
   const handleRecharge = (method) => {
     if (!selectedAmount) {
@@ -318,31 +283,39 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   const [processing, setProcessing] = useState(false);
   const previousRequestsLength = useRef(0); // ✅ Ajoutez cette ligne
 
-  useEffect(() => {
-    if (!currentUser) return;
+ useEffect(() => {
+  if (!currentUser) return;
 
-    const requestsRef = ref(database, `friendRequests/${currentUser.uid}`);
-    const unsubscribe = onValue(requestsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const requestsList = Object.entries(data).map(([key, value]) => ({
-          id: key,
-          ...value
-        }));
-        setRequests(requestsList);
-        previousRequestsLength.current = requestsList.length; // ✅ Mettez à jour la ref
-      } else {
-        // Fermer automatiquement le modal s'il n'y a plus de demandes
-        if (previousRequestsLength.current > 0) { // ✅ Utilisez la ref
-          onClose();
-        }
-        setRequests([]);
-        previousRequestsLength.current = 0; // ✅ Reset la ref
+  const requestsRef = ref(database, `friendRequests/${currentUser.uid}`);
+
+  const unsubscribe = onValue(requestsRef, (snapshot) => {
+    const data = snapshot.val();
+
+    if (data) {
+      const requestsList = Object.entries(data).map(([key, value]) => ({
+        id: key,
+        ...value
+      }));
+
+      setRequests(requestsList);
+      previousRequestsLength.current = requestsList.length;
+    } else {
+      // Fermer automatiquement le modal s'il n'y a plus de demandes
+      if (previousRequestsLength.current > 0) {
+        onClose();
       }
-    });
 
-    return () => unsubscribe();
-  }, [currentUser, onClose]); // ✅ Seulement currentUser et onClose
+      setRequests([]);
+      previousRequestsLength.current = 0;
+    }
+  });
+
+  // Nettoyage Firebase listener
+  return () => unsubscribe();
+}, [currentUser, onClose]);
+
+
+   // ✅ Seulement currentUser et onClose
 
   const acceptRequest = async (request) => {
     if (processing) return;
