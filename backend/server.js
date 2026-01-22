@@ -1,5 +1,5 @@
 // server.js - Backend Node.js pour gérer les paiements MonCash
-// VERSION PRODUCTION avec mode LIVE MonCash
+// VERSION PRODUCTION avec mode LIVE MonCash - CORRIGÉE
 
 require('dotenv').config();
 
@@ -295,20 +295,25 @@ app.post('/api/moncash/create-payment', async (req, res) => {
 });
 
 // ============================================
-// ROUTE 2 : CALLBACK MONCASH
+// ROUTE 2 : CALLBACK MONCASH (✅ CORRIGÉE)
 // ============================================
 app.get('/api/moncash/callback', async (req, res) => {
   const startTime = Date.now();
   
   try {
-    console.log('📥 [CALLBACK] Reçu de MonCash:', req.query);
+    console.log('📥 [CALLBACK] URL complète:', req.url);
+    console.log('📥 [CALLBACK] Query params:', req.query);
+    console.log('📥 [CALLBACK] Body:', req.body);
 
-    const { transactionId, orderId } = req.query;
+    // ✅ CORRECTION : MonCash envoie SEULEMENT orderId, pas transactionId
+    const orderId = req.query.orderId || req.query.orderid || req.query.order_id;
 
-    if (!transactionId || !orderId) {
-      console.error('❌ [CALLBACK] Paramètres manquants:', req.query);
+    if (!orderId) {
+      console.error('❌ [CALLBACK] orderId manquant dans:', req.query);
       return res.send(generateErrorPage('Paramètres manquants dans le callback'));
     }
+
+    console.log('🔑 [CALLBACK] OrderId détecté:', orderId);
 
     if (!db) {
       throw new Error('Firebase non initialisé');
@@ -322,18 +327,21 @@ app.get('/api/moncash/callback', async (req, res) => {
       return res.send(generateErrorPage('Paiement introuvable'));
     }
 
-    // Mettre à jour le statut
+    const payment = snapshot.val();
+
+    // ✅ Mettre à jour le statut en "callback_received"
     await paymentRef.update({
-      transactionId,
-      status: 'processing',
+      status: 'callback_received',
       callbackReceivedAt: Date.now()
     });
 
-    const duration = Date.now() - startTime;
-    console.log(`✅ [CALLBACK] Enregistré en ${duration}ms. TransactionId:`, transactionId);
+    console.log('✅ [CALLBACK] Callback enregistré pour:', orderId);
 
-    // Page de succès avec redirection
-    res.send(generateSuccessPage());
+    const duration = Date.now() - startTime;
+    console.log(`✅ [CALLBACK] Traité en ${duration}ms`);
+
+    // ✅ Page de succès avec auto-vérification
+    res.send(generateSuccessPageWithVerification(orderId));
 
   } catch (error) {
     const duration = Date.now() - startTime;
@@ -343,7 +351,7 @@ app.get('/api/moncash/callback', async (req, res) => {
 });
 
 // ============================================
-// ROUTE 3 : VÉRIFIER LE PAIEMENT (timeout 30s)
+// ROUTE 3 : VÉRIFIER LE PAIEMENT (✅ CORRIGÉE)
 // ============================================
 app.post('/api/moncash/verify-payment', async (req, res) => {
   const startTime = Date.now();
@@ -377,24 +385,17 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
 
     const payment = snapshot.val();
     
-    if (!payment.transactionId) {
-      console.log('⏳ [VERIFY] Pas de transactionId encore');
-      return res.json({ 
-        success: false,
-        status: 'pending',
-        message: 'Paiement en cours de traitement' 
-      });
-    }
-
-    // Vérifier le statut sur MonCash
-    console.log('🔄 [VERIFY] Vérification MonCash. TransactionId:', payment.transactionId);
+    // ✅ CORRECTION : Utiliser orderId au lieu de transactionId
+    console.log('🔄 [VERIFY] Vérification MonCash avec orderId:', orderId);
     
     const accessToken = await getMonCashToken();
+    
+    // ✅ MonCash utilise orderId, pas transactionId
     const moncashResponse = await axios.get(
-      `${MONCASH_CONFIG.baseUrl}/Api/v1/RetrieveTransactionPayment`,
+      `${MONCASH_CONFIG.baseUrl}/Api/v1/RetrieveOrderPayment`,
       {
-        params: { transactionId: payment.transactionId },
-        timeout: 30000, // ✅ 30 secondes
+        params: { orderId: orderId },
+        timeout: 30000,
         headers: { 
           Authorization: `Bearer ${accessToken}`,
           Accept: 'application/json'
@@ -402,12 +403,13 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
       }
     );
 
-    console.log('📊 [VERIFY] Statut MonCash:', moncashResponse.data);
+    console.log('📊 [VERIFY] Réponse MonCash:', JSON.stringify(moncashResponse.data, null, 2));
 
     const paymentStatus = moncashResponse.data?.payment?.message;
+    const transactionId = moncashResponse.data?.payment?.transaction_id;
 
     if (paymentStatus === 'successful') {
-      console.log('✅ [VERIFY] Paiement confirmé! Ajout jetons...');
+      console.log('✅ [VERIFY] Paiement confirmé! TransactionId:', transactionId);
 
       // Ajouter les jetons
       const userRef = db.ref(`users/${payment.userId}`);
@@ -420,6 +422,7 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
       // Déplacer vers completedPayments
       await db.ref(`completedPayments/${orderId}`).set({
         ...payment,
+        transactionId: transactionId,
         status: 'completed',
         completedAt: Date.now(),
         transactionData: moncashResponse.data
@@ -435,6 +438,7 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
         success: true, 
         tokens: payment.tokens,
         newBalance,
+        transactionId,
         duration: `${duration}ms`
       });
     }
@@ -444,7 +448,7 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
 
     res.json({ 
       success: false,
-      status: paymentStatus,
+      status: paymentStatus || 'pending',
       message: 'Paiement pas encore confirmé'
     });
 
@@ -488,7 +492,7 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({ 
     message: 'Backend MonCash Domino Ayiti 🚀',
-    version: '2.1',
+    version: '2.2-FIXED',
     mode: MONCASH_CONFIG.mode,
     timestamp: new Date().toISOString(),
     endpoints: [
@@ -586,6 +590,132 @@ function generateSuccessPage() {
   `;
 }
 
+// ✅ NOUVELLE FONCTION : Page avec auto-vérification
+function generateSuccessPageWithVerification(orderId) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Vérification du paiement</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .container {
+          background: white;
+          padding: 40px;
+          border-radius: 16px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+          max-width: 500px;
+          width: 100%;
+          text-align: center;
+        }
+        h1 { 
+          color: #27ae60; 
+          font-size: 32px;
+          margin-bottom: 16px;
+        }
+        p { 
+          color: #555;
+          font-size: 18px; 
+          margin: 12px 0; 
+        }
+        .spinner {
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #27ae60;
+          border-radius: 50%;
+          width: 50px;
+          height: 50px;
+          animation: spin 1s linear infinite;
+          margin: 24px auto;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        .icon { font-size: 64px; margin-bottom: 20px; }
+        #status { font-size: 16px; color: #888; margin-top: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="icon">✅</div>
+        <h1>Paiement reçu!</h1>
+        <p>Vérification en cours...</p>
+        <div class="spinner"></div>
+        <p id="status">Veuillez patienter...</p>
+      </div>
+      <script>
+        const BACKEND_URL = '${process.env.BACKEND_URL || 'http://localhost:5000'}';
+        const ORDER_ID = '${orderId}';
+        let attempts = 0;
+        const MAX_ATTEMPTS = 10;
+
+        async function verifyPayment() {
+          attempts++;
+          
+          try {
+            const response = await fetch(BACKEND_URL + '/api/moncash/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ orderId: ORDER_ID })
+            });
+
+            const data = await response.json();
+            
+            if (data.success) {
+              document.querySelector('.icon').textContent = '🎉';
+              document.querySelector('h1').textContent = 'Paiement confirmé!';
+              document.querySelector('p').textContent = data.tokens + ' jetons ajoutés!';
+              document.getElementById('status').textContent = 'Retour à l\\'application...';
+              
+              setTimeout(() => {
+                window.location.href = 'https://glittery-buttercream-2cf125.netlify.app';
+              }, 2000);
+              
+            } else if (attempts >= MAX_ATTEMPTS) {
+              document.querySelector('.icon').textContent = '⏳';
+              document.querySelector('h1').textContent = 'Vérification en cours';
+              document.querySelector('p').textContent = 'Le paiement est en traitement.';
+              document.getElementById('status').textContent = 'Vous pouvez revenir à l\\'application.';
+              
+              setTimeout(() => {
+                window.location.href = 'https://glittery-buttercream-2cf125.netlify.app';
+              }, 3000);
+              
+            } else {
+              document.getElementById('status').textContent = 
+                'Tentative ' + attempts + '/' + MAX_ATTEMPTS + '...';
+              setTimeout(verifyPayment, 3000);
+            }
+            
+          } catch (error) {
+            console.error('Erreur vérification:', error);
+            document.getElementById('status').textContent = 'Erreur de connexion. Retour...';
+            
+            setTimeout(() => {
+              window.location.href = 'https://glittery-buttercream-2cf125.netlify.app';
+            }, 3000);
+          }
+        }
+
+        // Démarrer la vérification après 2 secondes
+        setTimeout(verifyPayment, 2000);
+      </script>
+    </body>
+    </html>
+  `;
+}
+
 function generateErrorPage(message) {
   return `
     <!DOCTYPE html>
@@ -658,7 +788,7 @@ function generateErrorPage(message) {
 // ============================================
 app.listen(PORT, () => {
   console.log('='.repeat(60));
-  console.log(`🚀 Backend MonCash Domino Ayiti`);
+  console.log(`🚀 Backend MonCash Domino Ayiti - FIXED`);
   console.log(`📡 Port: ${PORT}`);
   console.log(`🔗 URL: ${process.env.BACKEND_URL || `http://localhost:${PORT}`}`);
   console.log(`🌍 Mode: ${MONCASH_CONFIG.mode.toUpperCase()}`);
