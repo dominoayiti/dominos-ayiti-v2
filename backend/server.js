@@ -1,4 +1,5 @@
 // server.js - Backend Node.js pour gérer les paiements MonCash
+// VERSION PRODUCTION avec mode LIVE MonCash
 
 require('dotenv').config();
 
@@ -11,12 +12,14 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================
-// MIDDLEWARE CORS - CORRECTION IMPORTANTE
+// MIDDLEWARE CORS - CORRIGÉ
 // ============================================
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'https://glittery-buttercream-2cf125.netlify.app'
+    'http://localhost:5173', // Vite local
+    'https://glittery-buttercream-2cf125.netlify.app',
+    /\.netlify\.app$/ // Accepte tous les sous-domaines Netlify
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -26,22 +29,40 @@ app.use(cors({
 app.use(express.json());
 
 // ============================================
-// CONFIGURATION MONCASH
+// CONFIGURATION MONCASH - MODE LIVE
 // ============================================
 const MONCASH_CONFIG = {
-  mode: 'sandbox', // 'sandbox' ou 'live'
+  mode: process.env.MONCASH_MODE || 'sandbox', // ✅ 'sandbox' ou 'live'
   clientId: process.env.MONCASH_CLIENT_ID,
   clientSecret: process.env.MONCASH_CLIENT_SECRET,
-  baseUrl: 'https://sandbox.moncashbutton.digicelgroup.com'
+  // ✅ Détection automatique de l'URL selon le mode
+  baseUrl: (process.env.MONCASH_MODE === 'live') 
+    ? 'https://moncashbutton.digicelgroup.com'  // PRODUCTION
+    : 'https://sandbox.moncashbutton.digicelgroup.com'  // SANDBOX
 };
 
-// 🔒 Sécurité
-if (!MONCASH_CONFIG.clientId || !MONCASH_CONFIG.clientSecret) {
-  console.error('❌ MONCASH_CLIENT_ID ou MONCASH_CLIENT_SECRET manquant');
+// 🔒 Vérification des variables d'environnement
+const requiredEnvVars = [
+  'MONCASH_CLIENT_ID',
+  'MONCASH_CLIENT_SECRET',
+  'BACKEND_URL',
+  'FIREBASE_PROJECT_ID',
+  'FIREBASE_CLIENT_EMAIL',
+  'FIREBASE_PRIVATE_KEY'
+];
+
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingVars.length > 0) {
+  console.error('❌ VARIABLES MANQUANTES:', missingVars.join(', '));
+  console.error('⚠️  Le serveur va démarrer mais certaines fonctionnalités ne marcheront pas!');
 }
 
-if (!process.env.BACKEND_URL) {
-  console.error('❌ BACKEND_URL manquant');
+// ⚠️ AVERTISSEMENT MODE PRODUCTION
+if (MONCASH_CONFIG.mode === 'live') {
+  console.log('🚨 ========================================');
+  console.log('🚨 MODE PRODUCTION ACTIVÉ (LIVE)');
+  console.log('🚨 Les paiements vont débiter de vrais comptes!');
+  console.log('🚨 ========================================');
 }
 
 // ============================================
@@ -52,15 +73,19 @@ if (
   process.env.FIREBASE_CLIENT_EMAIL &&
   process.env.FIREBASE_PRIVATE_KEY
 ) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
-    }),
-    databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com`
-  });
-  console.log('✅ Firebase Admin initialisé');
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+      }),
+      databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com`
+    });
+    console.log('✅ Firebase Admin initialisé');
+  } catch (error) {
+    console.error('❌ Erreur initialisation Firebase:', error.message);
+  }
 } else {
   console.error('❌ Variables Firebase manquantes');
 }
@@ -68,21 +93,27 @@ if (
 const db = admin.apps.length ? admin.database() : null;
 
 // ============================================
-// FONCTION : OBTENIR TOKEN MONCASH
+// FONCTION : OBTENIR TOKEN MONCASH (timeout 30s)
 // ============================================
 async function getMonCashToken() {
+  const startTime = Date.now();
+  
   try {
+    if (!MONCASH_CONFIG.clientId || !MONCASH_CONFIG.clientSecret) {
+      throw new Error('Credentials MonCash manquants');
+    }
+
     const auth = Buffer.from(
       `${MONCASH_CONFIG.clientId}:${MONCASH_CONFIG.clientSecret}`
     ).toString('base64');
 
-    console.log('🔄 Demande token MonCash...');
+    console.log(`🔄 [MonCash-${MONCASH_CONFIG.mode}] Demande token...`);
 
     const response = await axios.post(
       `${MONCASH_CONFIG.baseUrl}/Api/oauth/token`,
       'scope=read,write&grant_type=client_credentials',
       {
-        timeout: 15000,
+        timeout: 30000, // ✅ 30 secondes
         headers: {
           Authorization: `Basic ${auth}`,
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -91,31 +122,47 @@ async function getMonCashToken() {
       }
     );
 
+    const duration = Date.now() - startTime;
+    console.log(`✅ [MonCash] Token obtenu en ${duration}ms`);
+
     if (!response.data.access_token) {
-      throw new Error('Token MonCash non reçu');
+      throw new Error('Token MonCash vide dans la réponse');
     }
 
-    console.log('✅ Token MonCash obtenu');
     return response.data.access_token;
 
   } catch (error) {
-    console.error('❌ Erreur getMonCashToken:', error.response?.data || error.message);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [MonCash] Erreur token après ${duration}ms:`, error.response?.data || error.message);
+    
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Timeout: MonCash ne répond pas (30s dépassées)');
+    }
+    
     throw error;
   }
 }
 
 // ============================================
-// ROUTE 1 : CRÉER UN PAIEMENT
+// ROUTE 1 : CRÉER UN PAIEMENT (timeout 45s)
 // ============================================
 app.post('/api/moncash/create-payment', async (req, res) => {
+  const startTime = Date.now();
+  
   try {
-    console.log('📥 Requête create-payment reçue:', req.body);
+    console.log('📥 [CREATE-PAYMENT] Requête reçue:', {
+      amount: req.body.amount,
+      tokens: req.body.tokens,
+      userId: req.body.userId?.substring(0, 8) + '...',
+      userPseudo: req.body.userPseudo,
+      mode: MONCASH_CONFIG.mode
+    });
 
     const { amount, tokens, userId, userPseudo } = req.body;
 
     // Validation
     if (!amount || !tokens || !userId) {
-      console.error('❌ Paramètres manquants');
+      console.error('❌ [CREATE-PAYMENT] Paramètres manquants');
       return res.status(400).json({
         success: false,
         error: 'Paramètres manquants (amount, tokens, userId)'
@@ -123,55 +170,71 @@ app.post('/api/moncash/create-payment', async (req, res) => {
     }
 
     const amountInt = parseInt(amount, 10);
-    if (amountInt < 50) {
+    if (isNaN(amountInt) || amountInt < 50) {
       return res.status(400).json({
         success: false,
-        error: 'Montant minimum : 50 HTG'
+        error: 'Montant invalide (minimum : 50 HTG)'
       });
     }
 
-    // Générer orderId unique
-    const orderId = `TOKEN_${userId}_${Date.now()}`;
-    console.log('🆔 OrderId généré:', orderId);
+    // ⚠️ AVERTISSEMENT MODE LIVE
+    if (MONCASH_CONFIG.mode === 'live' && amountInt > 10000) {
+      console.warn('⚠️  [CREATE-PAYMENT] Montant élevé en mode LIVE:', amountInt);
+    }
 
-    // Obtenir token MonCash
+    if (!db) {
+      throw new Error('Firebase non initialisé');
+    }
+
+    // Générer orderId unique
+    const orderId = `TOKEN_${userId.substring(0, 8)}_${Date.now()}`;
+    console.log('🆔 [CREATE-PAYMENT] OrderId:', orderId);
+
+    // Étape 1: Obtenir token MonCash
+    console.log('⏱️  [CREATE-PAYMENT] Étape 1/3: Récupération token...');
     const accessToken = await getMonCashToken();
 
-    // Créer le paiement sur MonCash
-    console.log('🔄 Création paiement MonCash...');
-    const response = await axios.post(
+    // Étape 2: Créer le paiement sur MonCash
+    console.log('⏱️  [CREATE-PAYMENT] Étape 2/3: Création paiement MonCash...');
+    console.log('📤 [MonCash] Données envoyées:', {
+      amount: amountInt,
+      orderId,
+      baseUrl: MONCASH_CONFIG.baseUrl
+    });
+
+    const moncashResponse = await axios.post(
       `${MONCASH_CONFIG.baseUrl}/Api/v1/CreatePayment`,
       {
         amount: amountInt,
         orderId
       },
       {
+        timeout: 45000, // ✅ 45 secondes pour CreatePayment
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
         }
       }
     );
 
-    console.log('📊 Réponse MonCash:', response.data);
+    console.log('📊 [MonCash] Réponse complète:', JSON.stringify(moncashResponse.data, null, 2));
 
-    const paymentToken = response.data?.payment_token?.token;
+    const paymentToken = moncashResponse.data?.payment_token?.token;
     if (!paymentToken) {
+      console.error('❌ [MonCash] Token paiement manquant. Réponse:', moncashResponse.data);
       throw new Error('Token paiement manquant dans la réponse MonCash');
     }
 
+    console.log('✅ [MonCash] Payment token obtenu:', paymentToken.substring(0, 20) + '...');
+
+    // Étape 3: Sauvegarder dans Firebase
+    console.log('⏱️  [CREATE-PAYMENT] Étape 3/3: Sauvegarde Firebase...');
+    
     // URL de callback pour retour MonCash
     const callbackUrl = `${process.env.BACKEND_URL}/api/moncash/callback?orderId=${orderId}`;
+    console.log('🔗 [CREATE-PAYMENT] Callback URL:', callbackUrl);
 
-    // URL de redirection vers MonCash
-    const redirectUrl =
-      `${MONCASH_CONFIG.baseUrl}/Moncash-middleware/Payment/Redirect` +
-      `?token=${paymentToken}` +
-      `&url=${encodeURIComponent(callbackUrl)}`;
-
-    console.log('🔗 URL de redirection:', redirectUrl);
-
-    // Sauvegarder dans Firebase
     await db.ref(`pendingPayments/${orderId}`).set({
       userId,
       userPseudo: userPseudo || 'Utilisateur',
@@ -179,22 +242,54 @@ app.post('/api/moncash/create-payment', async (req, res) => {
       tokens: parseInt(tokens, 10),
       status: 'pending',
       paymentToken,
+      callbackUrl,
+      mode: MONCASH_CONFIG.mode,
       createdAt: Date.now()
     });
 
-    console.log('✅ Paiement enregistré dans Firebase');
+    console.log('✅ [Firebase] Paiement enregistré');
+
+    // URL de redirection vers MonCash
+    const redirectUrl =
+      `${MONCASH_CONFIG.baseUrl}/Moncash-middleware/Payment/Redirect` +
+      `?token=${paymentToken}` +
+      `&url=${encodeURIComponent(callbackUrl)}`;
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [CREATE-PAYMENT] Succès en ${duration}ms`);
+    console.log('🔗 [CREATE-PAYMENT] URL de redirection générée');
 
     res.json({ 
       success: true, 
       redirectUrl, 
-      orderId 
+      orderId,
+      mode: MONCASH_CONFIG.mode,
+      duration: `${duration}ms`
     });
 
   } catch (error) {
-    console.error('❌ Erreur create-payment:', error.response?.data || error.message);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [CREATE-PAYMENT] Erreur après ${duration}ms:`, {
+      message: error.message,
+      response: error.response?.data,
+      code: error.code
+    });
+
+    let userMessage = error.message;
+    
+    if (error.code === 'ECONNABORTED') {
+      userMessage = 'Timeout: Le serveur MonCash ne répond pas. Réessayez dans quelques instants.';
+    } else if (error.response?.status === 401) {
+      userMessage = 'Erreur d\'authentification MonCash. Vérifiez les credentials.';
+    } else if (error.response?.status >= 500) {
+      userMessage = 'MonCash est temporairement indisponible. Réessayez plus tard.';
+    }
+
     res.status(500).json({ 
       success: false, 
-      error: error.response?.data?.message || error.message 
+      error: userMessage,
+      duration: `${duration}ms`,
+      details: error.response?.data
     });
   }
 });
@@ -203,56 +298,28 @@ app.post('/api/moncash/create-payment', async (req, res) => {
 // ROUTE 2 : CALLBACK MONCASH
 // ============================================
 app.get('/api/moncash/callback', async (req, res) => {
+  const startTime = Date.now();
+  
   try {
-    console.log('📥 Callback MonCash reçu:', req.query);
+    console.log('📥 [CALLBACK] Reçu de MonCash:', req.query);
 
     const { transactionId, orderId } = req.query;
 
     if (!transactionId || !orderId) {
-      console.error('❌ Callback: paramètres manquants');
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Erreur</title>
-          <style>
-            body { font-family: Arial; text-align: center; padding: 50px; }
-            h1 { color: #e74c3c; }
-          </style>
-        </head>
-        <body>
-          <h1>❌ Erreur</h1>
-          <p>Paramètres manquants dans le callback</p>
-          <button onclick="window.close()">Fermer</button>
-        </body>
-        </html>
-      `);
+      console.error('❌ [CALLBACK] Paramètres manquants:', req.query);
+      return res.send(generateErrorPage('Paramètres manquants dans le callback'));
+    }
+
+    if (!db) {
+      throw new Error('Firebase non initialisé');
     }
 
     const paymentRef = db.ref(`pendingPayments/${orderId}`);
     const snapshot = await paymentRef.once('value');
 
     if (!snapshot.exists()) {
-      console.error('❌ Paiement introuvable:', orderId);
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Erreur</title>
-          <style>
-            body { font-family: Arial; text-align: center; padding: 50px; }
-            h1 { color: #e74c3c; }
-          </style>
-        </head>
-        <body>
-          <h1>❌ Erreur</h1>
-          <p>Paiement introuvable</p>
-          <button onclick="window.close()">Fermer</button>
-        </body>
-        </html>
-      `);
+      console.error('❌ [CALLBACK] Paiement introuvable:', orderId);
+      return res.send(generateErrorPage('Paiement introuvable'));
     }
 
     // Mettre à jour le statut
@@ -262,94 +329,27 @@ app.get('/api/moncash/callback', async (req, res) => {
       callbackReceivedAt: Date.now()
     });
 
-    console.log('✅ Callback enregistré, transactionId:', transactionId);
+    const duration = Date.now() - startTime;
+    console.log(`✅ [CALLBACK] Enregistré en ${duration}ms. TransactionId:`, transactionId);
 
-    // Page de succès avec redirection automatique
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Paiement reçu</title>
-        <style>
-          body { 
-            font-family: Arial; 
-            text-align: center; 
-            padding: 50px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-          }
-          .container {
-            background: white;
-            color: #333;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            max-width: 500px;
-            margin: 0 auto;
-          }
-          h1 { color: #27ae60; margin-bottom: 20px; }
-          p { font-size: 18px; margin: 15px 0; }
-          .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #27ae60;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-          }
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>✅ Paiement reçu!</h1>
-          <p>Votre paiement a été reçu avec succès.</p>
-          <div class="spinner"></div>
-          <p>Retour à l'application dans 3 secondes...</p>
-        </div>
-        <script>
-          setTimeout(() => {
-            window.location.href = 'https://glittery-buttercream-2cf125.netlify.app';
-          }, 3000);
-        </script>
-      </body>
-      </html>
-    `);
+    // Page de succès avec redirection
+    res.send(generateSuccessPage());
 
   } catch (error) {
-    console.error('❌ Erreur callback:', error.message);
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Erreur</title>
-        <style>
-          body { font-family: Arial; text-align: center; padding: 50px; }
-          h1 { color: #e74c3c; }
-        </style>
-      </head>
-      <body>
-        <h1>❌ Erreur serveur</h1>
-        <p>${error.message}</p>
-        <button onclick="window.close()">Fermer</button>
-      </body>
-      </html>
-    `);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [CALLBACK] Erreur après ${duration}ms:`, error.message);
+    res.send(generateErrorPage(`Erreur serveur: ${error.message}`));
   }
 });
 
 // ============================================
-// ROUTE 3 : VÉRIFIER LE PAIEMENT
+// ROUTE 3 : VÉRIFIER LE PAIEMENT (timeout 30s)
 // ============================================
 app.post('/api/moncash/verify-payment', async (req, res) => {
+  const startTime = Date.now();
+  
   try {
-    console.log('📥 Requête verify-payment:', req.body);
+    console.log('📥 [VERIFY] Requête:', req.body);
 
     const { orderId } = req.body;
     
@@ -360,10 +360,15 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
       });
     }
 
+    if (!db) {
+      throw new Error('Firebase non initialisé');
+    }
+
     const paymentRef = db.ref(`pendingPayments/${orderId}`);
     const snapshot = await paymentRef.once('value');
 
     if (!snapshot.exists()) {
+      console.log('⚠️  [VERIFY] Paiement introuvable:', orderId);
       return res.status(404).json({ 
         success: false,
         error: 'Paiement introuvable' 
@@ -373,7 +378,7 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
     const payment = snapshot.val();
     
     if (!payment.transactionId) {
-      console.log('⏳ Paiement en attente (pas de transactionId)');
+      console.log('⏳ [VERIFY] Pas de transactionId encore');
       return res.json({ 
         success: false,
         status: 'pending',
@@ -382,23 +387,29 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
     }
 
     // Vérifier le statut sur MonCash
-    console.log('🔄 Vérification transactionId:', payment.transactionId);
+    console.log('🔄 [VERIFY] Vérification MonCash. TransactionId:', payment.transactionId);
     
     const accessToken = await getMonCashToken();
-    const response = await axios.get(
+    const moncashResponse = await axios.get(
       `${MONCASH_CONFIG.baseUrl}/Api/v1/RetrieveTransactionPayment`,
       {
         params: { transactionId: payment.transactionId },
-        headers: { Authorization: `Bearer ${accessToken}` }
+        timeout: 30000, // ✅ 30 secondes
+        headers: { 
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json'
+        }
       }
     );
 
-    console.log('📊 Statut MonCash:', response.data);
+    console.log('📊 [VERIFY] Statut MonCash:', moncashResponse.data);
 
-    if (response.data.payment.message === 'successful') {
-      console.log('✅ Paiement confirmé, ajout des jetons...');
+    const paymentStatus = moncashResponse.data?.payment?.message;
 
-      // Ajouter les jetons à l'utilisateur
+    if (paymentStatus === 'successful') {
+      console.log('✅ [VERIFY] Paiement confirmé! Ajout jetons...');
+
+      // Ajouter les jetons
       const userRef = db.ref(`users/${payment.userId}`);
       const userSnap = await userRef.once('value');
       const currentTokens = userSnap.val()?.tokens || 0;
@@ -411,33 +422,40 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
         ...payment,
         status: 'completed',
         completedAt: Date.now(),
-        transactionData: response.data
+        transactionData: moncashResponse.data
       });
 
       // Supprimer de pendingPayments
       await paymentRef.remove();
 
-      console.log('✅ Jetons ajoutés:', payment.tokens, '| Nouveau solde:', newBalance);
+      const duration = Date.now() - startTime;
+      console.log(`✅ [VERIFY] Succès en ${duration}ms. Jetons: ${payment.tokens}, Nouveau solde: ${newBalance}`);
 
       return res.json({ 
         success: true, 
         tokens: payment.tokens,
-        newBalance
+        newBalance,
+        duration: `${duration}ms`
       });
     }
 
-    // Paiement pas encore réussi
+    const duration = Date.now() - startTime;
+    console.log(`⏳ [VERIFY] Statut: ${paymentStatus} après ${duration}ms`);
+
     res.json({ 
       success: false,
-      status: response.data.payment.message,
+      status: paymentStatus,
       message: 'Paiement pas encore confirmé'
     });
 
   } catch (error) {
-    console.error('❌ Erreur verify-payment:', error.response?.data || error.message);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [VERIFY] Erreur après ${duration}ms:`, error.response?.data || error.message);
+    
     res.status(500).json({ 
       success: false,
-      error: error.message 
+      error: error.message,
+      duration: `${duration}ms`
     });
   }
 });
@@ -446,13 +464,22 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
 // ROUTE SANTÉ
 // ============================================
 app.get('/api/health', (req, res) => {
-  res.json({
+  const health = {
     status: 'OK',
     timestamp: new Date().toISOString(),
+    uptime: `${Math.floor(process.uptime())}s`,
     node: process.version,
     firebase: admin.apps.length ? 'Connected' : 'Not connected',
-    moncash: MONCASH_CONFIG.clientId ? 'Configured' : 'Not configured'
-  });
+    moncash: MONCASH_CONFIG.clientId ? 'Configured' : 'Not configured',
+    env: {
+      backendUrl: process.env.BACKEND_URL || 'Not set',
+      mode: MONCASH_CONFIG.mode,
+      baseUrl: MONCASH_CONFIG.baseUrl
+    }
+  };
+
+  console.log('🏥 [HEALTH] Check:', health);
+  res.json(health);
 });
 
 // ============================================
@@ -460,7 +487,9 @@ app.get('/api/health', (req, res) => {
 // ============================================
 app.get('/', (req, res) => {
   res.json({ 
-    message: 'Backend MonCash opérationnel 🚀',
+    message: 'Backend MonCash Domino Ayiti 🚀',
+    version: '2.1',
+    mode: MONCASH_CONFIG.mode,
     timestamp: new Date().toISOString(),
     endpoints: [
       'POST /api/moncash/create-payment',
@@ -475,6 +504,7 @@ app.get('/', (req, res) => {
 // 404
 // ============================================
 app.use((req, res) => {
+  console.log('⚠️  [404] Route non trouvée:', req.path);
   res.status(404).json({ 
     error: 'Route non trouvée',
     path: req.path 
@@ -482,16 +512,172 @@ app.use((req, res) => {
 });
 
 // ============================================
+// FONCTIONS UTILITAIRES
+// ============================================
+function generateSuccessPage() {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Paiement reçu</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .container {
+          background: white;
+          padding: 40px;
+          border-radius: 16px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+          max-width: 500px;
+          width: 100%;
+          text-align: center;
+        }
+        h1 { 
+          color: #27ae60; 
+          font-size: 32px;
+          margin-bottom: 16px;
+        }
+        p { 
+          color: #555;
+          font-size: 18px; 
+          margin: 12px 0; 
+        }
+        .spinner {
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #27ae60;
+          border-radius: 50%;
+          width: 50px;
+          height: 50px;
+          animation: spin 1s linear infinite;
+          margin: 24px auto;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        .icon { font-size: 64px; margin-bottom: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="icon">✅</div>
+        <h1>Paiement reçu!</h1>
+        <p>Votre paiement a été reçu avec succès.</p>
+        <div class="spinner"></div>
+        <p style="font-size: 16px; color: #888;">Retour à l'application dans 3 secondes...</p>
+      </div>
+      <script>
+        setTimeout(() => {
+          window.location.href = 'https://glittery-buttercream-2cf125.netlify.app';
+        }, 3000);
+      </script>
+    </body>
+    </html>
+  `;
+}
+
+function generateErrorPage(message) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Erreur</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+          background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .container {
+          background: white;
+          padding: 40px;
+          border-radius: 16px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+          max-width: 500px;
+          width: 100%;
+          text-align: center;
+        }
+        h1 { 
+          color: #e74c3c; 
+          font-size: 32px;
+          margin-bottom: 16px;
+        }
+        p { 
+          color: #555;
+          font-size: 16px; 
+          margin: 12px 0; 
+        }
+        button {
+          margin-top: 24px;
+          padding: 12px 32px;
+          background: #e74c3c;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          font-size: 16px;
+          cursor: pointer;
+          transition: background 0.3s;
+        }
+        button:hover { background: #c0392b; }
+        .icon { font-size: 64px; margin-bottom: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="icon">❌</div>
+        <h1>Erreur</h1>
+        <p>${message}</p>
+        <button onclick="window.location.href='https://glittery-buttercream-2cf125.netlify.app'">
+          Retour à l'application
+        </button>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+// ============================================
 // START SERVER
 // ============================================
 app.listen(PORT, () => {
-  console.log('='.repeat(50));
-  console.log(`🚀 Backend MonCash lancé sur le port ${PORT}`);
+  console.log('='.repeat(60));
+  console.log(`🚀 Backend MonCash Domino Ayiti`);
+  console.log(`📡 Port: ${PORT}`);
   console.log(`🔗 URL: ${process.env.BACKEND_URL || `http://localhost:${PORT}`}`);
-  console.log(`🌍 Mode: ${MONCASH_CONFIG.mode}`);
-  console.log(`🔥 Firebase: ${admin.apps.length ? 'Connecté' : 'Non connecté'}`);
-  console.log(`💰 MonCash: ${MONCASH_CONFIG.clientId ? 'Configuré' : 'Non configuré'}`);
-  console.log('='.repeat(50));
+  console.log(`🌍 Mode: ${MONCASH_CONFIG.mode.toUpperCase()}`);
+  console.log(`🔗 MonCash URL: ${MONCASH_CONFIG.baseUrl}`);
+  console.log(`🔥 Firebase: ${admin.apps.length ? '✅ Connecté' : '❌ Non connecté'}`);
+  console.log(`💰 MonCash: ${MONCASH_CONFIG.clientId ? '✅ Configuré' : '❌ Non configuré'}`);
+  console.log(`⏱️  Timeouts:`);
+  console.log(`   - getToken: 30s`);
+  console.log(`   - createPayment: 45s`);
+  console.log(`   - verifyPayment: 30s`);
+  
+  if (MONCASH_CONFIG.mode === 'live') {
+    console.log('🚨 ========================================');
+    console.log('🚨 ATTENTION: MODE PRODUCTION (LIVE)');
+    console.log('🚨 Paiements réels activés!');
+    console.log('🚨 ========================================');
+  }
+  
+  console.log('='.repeat(60));
 });
 
 module.exports = app;

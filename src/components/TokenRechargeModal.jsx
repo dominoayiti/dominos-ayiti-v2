@@ -13,9 +13,6 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Frais de service (10%)
-  const SERVICE_FEE = 0.10;
-
   const rechargeOptions = [
     { tokens: 20, price: 100, currency: 'HTG' },
     { tokens: 100, price: 500, currency: 'HTG' },
@@ -29,18 +26,7 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
     { tokens: 50000, price: 250000, currency: 'HTG' }
   ];
 
-  // Calculer le total avec frais
-  const calculateTotal = (basePrice) => {
-    const serviceFee = basePrice * SERVICE_FEE;
-    const total = basePrice + serviceFee;
-    return {
-      basePrice,
-      serviceFee,
-      total
-    };
-  };
-
-  // Gérer le paiement MonCash
+  // Gérer le paiement MonCash (SANS frais - envoi du prix de base uniquement)
   const handleMonCashPayment = async () => {
     if (!selectedAmount) {
       setErrorMessage('Tanpri chwazi yon kantite jeton!');
@@ -57,16 +43,14 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
     setSuccessMessage('');
 
     try {
-      const pricing = calculateTotal(selectedAmount.price);
-
       // Appeler le backend pour créer le paiement MonCash
-      const response = await fetch(`${API_URL}/api/moncash/create-payment`, {
+      const response = await fetch(`${BACKEND_URL}/api/moncash/create-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: pricing.basePrice,
+          amount: selectedAmount.price, // Prix de base sans frais
           tokens: selectedAmount.tokens,
           userId: userId,
           userPseudo: userPseudo
@@ -109,7 +93,7 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
         setIsProcessing(true);
 
         try {
-          const response = await fetch(`${API_URL}/api/moncash/verify-payment`, {
+          const response = await fetch(`${BACKEND_URL}/api/moncash/verify-payment`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -186,20 +170,11 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
             </div>
           )}
 
-          {/* Info Banner */}
-          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded">
-            <p className="text-sm text-yellow-800">
-              ⚠️ <strong>Nòt:</strong> Frè sèvis 10% ap ajoute nan tout rechaj. 
-              Egzanp: Pou 500 HTG, w ap peye 550 HTG total.
-            </p>
-          </div>
-
           {/* Recharge Options */}
           <div className="mb-6">
             <h3 className="text-lg font-bold text-gray-800 mb-4">Chwazi Kantite Jeton</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {rechargeOptions.map((option) => {
-                const pricing = calculateTotal(option.price);
                 return (
                   <button
                     key={option.tokens}
@@ -219,12 +194,7 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
                     <p className="font-bold text-gray-800 text-lg">{option.tokens.toLocaleString()}</p>
                     <p className="text-sm text-gray-600">Jetons</p>
                     <div className="mt-2 border-t pt-2">
-                      <p className="text-xs text-gray-500">Pri baz:</p>
-                      <p className="text-green-600 font-semibold">{pricing.basePrice.toLocaleString()} HTG</p>
-                      <p className="text-xs text-gray-500 mt-1">+ Frè (10%):</p>
-                      <p className="text-orange-500 font-semibold">{pricing.serviceFee.toLocaleString()} HTG</p>
-                      <p className="text-xs text-gray-700 font-bold mt-1 pt-1 border-t">Total:</p>
-                      <p className="text-blue-600 font-bold text-lg">{pricing.total.toLocaleString()} HTG</p>
+                      <p className="text-green-600 font-bold text-xl">{option.price.toLocaleString()} HTG</p>
                     </div>
                   </button>
                 );
@@ -241,20 +211,10 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
                   <span className="text-gray-600">Jetons:</span>
                   <span className="font-bold text-gray-900">{selectedAmount.tokens.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Pri baz:</span>
-                  <span className="font-semibold text-gray-900">{selectedAmount.price.toLocaleString()} HTG</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Frè sèvis (10%):</span>
-                  <span className="font-semibold text-orange-500">
-                    {calculateTotal(selectedAmount.price).serviceFee.toLocaleString()} HTG
-                  </span>
-                </div>
                 <div className="flex justify-between pt-2 border-t border-blue-300">
                   <span className="font-bold text-blue-900">TOTAL:</span>
                   <span className="font-bold text-blue-900 text-lg">
-                    {calculateTotal(selectedAmount.price).total.toLocaleString()} HTG
+                    {selectedAmount.price.toLocaleString()} HTG
                   </span>
                 </div>
               </div>

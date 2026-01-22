@@ -17,7 +17,7 @@ import { ref, onValue, update, remove, set } from 'firebase/database';
   const [processingMessage, setProcessingMessage] = useState('');
 
   const rechargeOptions = [
-    { tokens: 10, price: '100', currency: 'HTG' },
+    { tokens: 20, price: '100', currency: 'HTG' },
     { tokens: 100, price: '500', currency: 'HTG' },
     { tokens: 200, price: '1,000', currency: 'HTG' },
     { tokens: 500, price: '2,500', currency: 'HTG' },
@@ -37,21 +37,25 @@ import { ref, onValue, update, remove, set } from 'firebase/database';
 
   // 🆕 Fonction pour gérer le paiement MonCash
   const handleMonCashPayment = async () => {
-    if (!selectedAmount) {
-      alert('Tanpri chwazi yon kantite jeton!');
-      return;
-    }
+  if (!selectedAmount) {
+    alert('Tanpri chwazi yon kantite jeton!');
+    return;
+  }
 
-    if (!currentUser || !userData) {
-      alert('Erè: Utilisateur non connecté');
-      return;
-    }
+  if (!currentUser || !userData) {
+    alert('Erè: Utilisateur non connecté');
+    return;
+  }
 
-    setIsProcessing(true);
-    setProcessingMessage('Kreye peman MonCash...');
+  setIsProcessing(true);
+  setProcessingMessage('Koneksyon ak sèvè...');
 
-    try {
-      console.log('🔄 Création paiement MonCash...');
+ 
+
+  setProcessingMessage('Kreye peman MonCash...');
+
+  try {
+    console.log('🔄 Création paiement MonCash...');
 
       // Étape 1: Créer le paiement sur le backend
       const response = await fetch(`${BACKEND_URL}/api/moncash/create-payment`, {
