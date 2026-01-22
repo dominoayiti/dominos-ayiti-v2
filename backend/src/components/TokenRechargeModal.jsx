@@ -17,6 +17,7 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
   const SERVICE_FEE = 0.10;
 
   const rechargeOptions = [
+    { tokens: 20, price: 100, currency: 'HTG' },
     { tokens: 100, price: 500, currency: 'HTG' },
     { tokens: 200, price: 1000, currency: 'HTG' },
     { tokens: 500, price: 2500, currency: 'HTG' },
@@ -59,7 +60,7 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
       const pricing = calculateTotal(selectedAmount.price);
 
       // Appeler le backend pour créer le paiement MonCash
-      const response = await fetch(`${API_URL}/api/moncash/create-payment`, {
+      const response = await fetch(`${BACKEND_URL}/api/moncash/create-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,7 +109,7 @@ const TokenRechargeModal = ({ onClose, currentTokens, userId, userPseudo }) => {
         setIsProcessing(true);
 
         try {
-          const response = await fetch(`${API_URL}/api/moncash/verify-payment`, {
+          const response = await fetch(`${BACKEND_URL}/api/moncash/verify-payment`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
