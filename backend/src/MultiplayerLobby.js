@@ -16,7 +16,7 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
   const [processingMessage, setProcessingMessage] = useState('');
 
   const rechargeOptions = [
-    { tokens: 10, price: '100', currency: 'HTG' },
+    { tokens: 20, price: '100', currency: 'HTG' },
     { tokens: 100, price: '500', currency: 'HTG' },
     { tokens: 200, price: '1,000', currency: 'HTG' },
     { tokens: 500, price: '2,500', currency: 'HTG' },
