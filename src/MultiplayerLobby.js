@@ -3,6 +3,9 @@ import { Users, Wifi, WifiOff, UserPlus, UserMinus, Gamepad2, Coins, User, LogOu
 import { useAuth } from './useAuth';
 import { database } from './firebase-config';
 import { ref, onValue, update, remove, set } from 'firebase/database';
+import GameRequest from './components/GameRequest';
+import BettingModal from './components/BettingModal';
+import MultiplayerGame from './components/MultiplayerGame';
 
 // ============================================
 // CONFIGURATION - CHANGEZ L'URL DE VOTRE BACKEND ICI
@@ -15,6 +18,7 @@ import { ref, onValue, update, remove, set } from 'firebase/database';
   const [selectedAmount, setSelectedAmount] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
+  
 
   const rechargeOptions = [
     { tokens: 20, price: '100', currency: 'HTG' },
@@ -524,7 +528,7 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
 
 
 
-const MultiplayerMenu = ({ onBack, playerTokens }) => {
+  const MultiplayerMenu = ({ onBack, playerTokens }) => {
   const { currentUser, userData, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('online');
   const [allPlayers, setAllPlayers] = useState([]);
@@ -534,6 +538,9 @@ const MultiplayerMenu = ({ onBack, playerTokens }) => {
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [showFriendRequests, setShowFriendRequests] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [showBettingModal, setShowBettingModal] = useState(false);
+  const [selectedOpponent, setSelectedOpponent] = useState(null);
+  const [activeGame, setActiveGame] = useState(null);
 
   // Charger tous les joueurs
   useEffect(() => {
@@ -662,30 +669,52 @@ const MultiplayerMenu = ({ onBack, playerTokens }) => {
   };
 
   const proposeGame = async (opponentUid, opponentPseudo) => {
-    if (!currentUser || !userData) return;
+  if (!currentUser || !userData) return;
 
-    try {
-      const gameRequestRef = ref(database, `gameRequests/${opponentUid}/${currentUser.uid}`);
-      await update(gameRequestRef, {
-        from: currentUser.uid,
-        fromPseudo: userData.pseudo,
-        to: opponentUid,
-        toPseudo: opponentPseudo,
-        status: 'pending',
-        timestamp: Date.now()
-      });
+  try {
 
-      alert(`Demann jwèt voye bay ${opponentPseudo}!`);
-    } catch (error) {
-      console.error('❌ Erreur proposition jeu:', error);
-    }
-  };
+    //demande de jeu 
+    const gameRequestRef = ref(database, `gameRequests/${opponentUid}/${currentUser.uid}`);
+    await set(gameRequestRef, {  // ← NOUVELLE VERSION avec "set"
+      from: currentUser.uid,
+      fromPseudo: userData.pseudo,
+      to: opponentUid,
+      toPseudo: opponentPseudo,
+      status: 'pending',
+      timestamp: Date.now()
+    });
+
+    alert(`Demann jwèt voye bay ${opponentPseudo}!`);
+  } catch (error) {
+    console.error('❌ Erreur proposition jeu:', error);
+  }
+};
+
+//jeu accepte 
+const handleGameAccepted = (request) => {
+  const opponent = allPlayers.find(p => p.uid === request.from);
+  if (opponent) {
+    setSelectedOpponent(opponent);
+    setShowBettingModal(true);
+  }
+};
+
+const handleStartGame = (gameData) => {
+  setShowBettingModal(false);
+  setActiveGame(gameData);
+};
+
+const handleExitGame = () => {
+  setActiveGame(null);
+  setSelectedOpponent(null);
+};
 
   const handleLogout = async () => {
     await logout();
     onBack();
   };
 
+  //fonction return
   return (
     <div className="min-h-screen bg-cover bg-center p-3" style={{backgroundImage: 'url(/gran_lakou.jpg)'}}>
       <div className="max-w-4xl mx-auto">
@@ -1074,6 +1103,37 @@ const MultiplayerMenu = ({ onBack, playerTokens }) => {
           onClose={() => setShowFriendRequests(false)}
         />
       )}
+
+       {/* Demandes de jeu */}
+      <GameRequest 
+        currentUser={currentUser}
+        userData={userData}
+        onAccept={handleGameAccepted}
+      />
+
+      {/* Modal de mise */}
+      {showBettingModal && selectedOpponent && (
+        <BettingModal
+          currentUser={currentUser}
+          userData={userData}
+          opponent={selectedOpponent}
+          onClose={() => {
+            setShowBettingModal(false);
+            setSelectedOpponent(null);
+          }}
+          onStartGame={handleStartGame}
+        />
+      )}
+
+      {/* Jeu actif */}
+      {activeGame && (
+        <MultiplayerGame
+          gameData={activeGame}
+          currentUser={currentUser}
+          onExit={handleExitGame}
+        />
+      )}
+
     </div>
   );
 };
