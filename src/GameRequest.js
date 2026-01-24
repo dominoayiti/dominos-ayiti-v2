@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Gamepad2, X, Check, Loader } from 'lucide-react';
 import { database } from '../firebase-config';
 import { ref, onValue, remove, set } from 'firebase/database';
