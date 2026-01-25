@@ -668,7 +668,7 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
     }
   };
 // proposer de jouer 
- const proposeGame = async (opponentUid, opponentPseudo) => {
+const proposeGame = async (opponentUid, opponentPseudo) => {
   if (!currentUser || !userData) {
     console.error('❌ Utilisateur non connecté');
     alert('Erè! Ou dwe konekte pou jwe.');
@@ -702,6 +702,13 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
     `;
     document.body.appendChild(toastDiv);
     setTimeout(() => toastDiv.remove(), 3000);
+
+    // 🆕 OUVRIR IMMÉDIATEMENT LE BETTING MODAL
+    const opponent = allPlayers.find(p => p.uid === opponentUid);
+    if (opponent) {
+      setSelectedOpponent(opponent);
+      setShowBettingModal(true);
+    }
 
   } catch (error) {
     console.error('❌ Erreur proposition jeu:', error);

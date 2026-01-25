@@ -9,11 +9,14 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
   const [isWaiting, setIsWaiting] = useState(false);
   const [error, setError] = useState('');
   const [gameSession, setGameSession] = useState(null);
+  const [isCancelled, setIsCancelled] = useState(false);
 
-  // Générer un ID de session unique
+  // Générer un ID de session UNIFIÉ
   useEffect(() => {
-    const sessionId = `game_${Date.now()}_${currentUser.uid}_${opponent.uid}`;
+    const uids = [currentUser.uid, opponent.uid].sort();
+    const sessionId = `game_${uids[0]}_${uids[1]}`;
     setGameSession(sessionId);
+    console.log('🎮 Session ID:', sessionId);
   }, [currentUser.uid, opponent.uid]);
 
   // Écouter les mises de l'adversaire
@@ -29,6 +32,7 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
         console.log('💰 Mise adversaire détectée:', data.amount);
         setOpponentBet(data.amount);
       } else {
+        console.log('⏳ Aucune mise adversaire');
         setOpponentBet(null);
       }
     });
@@ -36,12 +40,45 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
     return () => unsubscribe();
   }, [gameSession, opponent]);
 
+  // Écouter les annulations
+  useEffect(() => {
+    if (!gameSession) return;
+
+    const cancelRef = ref(database, `gameBets/${gameSession}/cancelled`);
+    
+    const unsubscribe = onValue(cancelRef, (snapshot) => {
+      const data = snapshot.val();
+      
+      if (data && data.by !== currentUser.uid) {
+        console.log('❌ Match annulé par:', data.byPseudo);
+        
+        // Toast d'annulation
+        const toastDiv = document.createElement('div');
+        toastDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+        toastDiv.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="text-xl">❌</span>
+            <span class="font-semibold">${data.byPseudo} anile match la</span>
+          </div>
+        `;
+        document.body.appendChild(toastDiv);
+        setTimeout(() => {
+          toastDiv.remove();
+          onClose();
+        }, 3000);
+        
+        setIsCancelled(true);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [gameSession, currentUser.uid, onClose]);
+
   // Vérifier si les deux joueurs ont misé
   useEffect(() => {
     if (myBet && opponentBet && myBet === opponentBet) {
-      console.log('✅ Les deux joueurs ont misé le même montant:', myBet);
+      console.log('✅ Les deux joueurs ont misé:', myBet);
       
-      // Attendre 1 seconde puis lancer le jeu
       setTimeout(() => {
         const gameData = {
           sessionId: gameSession,
@@ -58,10 +95,30 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
     }
   }, [myBet, opponentBet, gameSession, currentUser, userData, opponent, onStartGame]);
 
+  // Vérifier si l'adversaire a assez de jetons
+  useEffect(() => {
+    if (opponentBet && !myBet && opponent.tokens < opponentBet) {
+      // Toast d'erreur pour insuffisance de jetons
+      const toastDiv = document.createElement('div');
+      toastDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+      toastDiv.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="text-xl">❌</span>
+          <span class="font-semibold">${opponent.pseudo} pa gen ase jeton. Match enposib!</span>
+        </div>
+      `;
+      document.body.appendChild(toastDiv);
+      setTimeout(() => {
+        toastDiv.remove();
+        handleCancel();
+      }, 3000);
+    }
+  }, [opponentBet, myBet, opponent]);
+
   const betOptions = [10, 50, 100, 500, 1000, 5000];
 
   const handlePlaceBet = async (amount) => {
-    // Vérifier si l'adversaire a déjà misé
+    // Vérifier si l'adversaire a déjà misé et que les montants correspondent
     if (opponentBet && amount !== opponentBet) {
       setError(`Ou dwe mize ${opponentBet} jetons tankou advèsè ou!`);
       return;
@@ -70,6 +127,22 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
     // Vérifier si le joueur a assez de jetons
     if (amount > (userData?.tokens || 0)) {
       setError('Ou pa gen ase jeton!');
+      
+      // Notifier l'adversaire
+      const toastDiv = document.createElement('div');
+      toastDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+      toastDiv.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="text-xl">❌</span>
+          <span class="font-semibold">Ou pa gen ase jeton. Match enposib!</span>
+        </div>
+      `;
+      document.body.appendChild(toastDiv);
+      setTimeout(() => {
+        toastDiv.remove();
+        handleCancel();
+      }, 3000);
+      
       return;
     }
 
@@ -78,7 +151,6 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
     setIsWaiting(true);
 
     try {
-      // Enregistrer la mise dans Firebase
       const betRef = ref(database, `gameBets/${gameSession}/${currentUser.uid}`);
       await set(betRef, {
         amount: amount,
@@ -91,20 +163,54 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
       console.error('❌ Erreur placement mise:', error);
       setError('Erè! Pa ka anrejistre mize a.');
       setIsWaiting(false);
+      setMyBet(null);
     }
   };
 
   const handleCancel = async () => {
-    // Supprimer la mise de Firebase
-    if (gameSession && myBet) {
-      try {
+    if (isCancelled) return;
+
+    try {
+      // Marquer comme annulé dans Firebase
+      const cancelRef = ref(database, `gameBets/${gameSession}/cancelled`);
+      await set(cancelRef, {
+        by: currentUser.uid,
+        byPseudo: userData.pseudo,
+        timestamp: Date.now()
+      });
+
+      // Supprimer les mises
+      if (myBet) {
         await remove(ref(database, `gameBets/${gameSession}/${currentUser.uid}`));
-      } catch (error) {
-        console.error('❌ Erreur annulation:', error);
       }
+
+      // Toast local
+      const toastDiv = document.createElement('div');
+      toastDiv.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+      toastDiv.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="text-xl">⚠️</span>
+          <span class="font-semibold">Ou anile match la</span>
+        </div>
+      `;
+      document.body.appendChild(toastDiv);
+      setTimeout(() => toastDiv.remove(), 2000);
+
+      // Nettoyer après 3 secondes
+      setTimeout(async () => {
+        await remove(ref(database, `gameBets/${gameSession}`));
+      }, 3000);
+
+    } catch (error) {
+      console.error('❌ Erreur annulation:', error);
     }
+
     onClose();
   };
+
+  if (isCancelled) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
@@ -120,7 +226,7 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
             </div>
             <button 
               onClick={handleCancel}
-              disabled={isWaiting}
+              disabled={isWaiting && myBet && opponentBet}
               className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors disabled:opacity-50"
             >
               <X className="w-6 h-6 text-white" />
