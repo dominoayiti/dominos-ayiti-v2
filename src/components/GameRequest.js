@@ -6,19 +6,25 @@ import { ref, onValue, remove, set } from 'firebase/database';
 const GameRequest = ({ currentUser, userData, onAccept }) => {
   const [pendingRequests, setPendingRequests] = useState([]);
 
+  console.log('🔄 GameRequest rendu avec:', {
+    currentUser: currentUser?.uid,
+    pendingRequests: pendingRequests.length
+  });
+
   useEffect(() => {
     if (!currentUser) {
       console.log('⚠️ GameRequest: Pas d\'utilisateur connecté');
       return;
     }
 
-    console.log('🔄 GameRequest: Écoute des demandes pour', currentUser.uid);
+    console.log('🔊 GameRequest: Écoute des demandes pour UID =', currentUser.uid);
 
     const requestsRef = ref(database, `gameRequests/${currentUser.uid}`);
+    
     const unsubscribe = onValue(requestsRef, (snapshot) => {
       const data = snapshot.val();
       
-      console.log('📊 GameRequest: Données reçues:', data);
+      console.log('📊 GameRequest: Données Firebase reçues =', data);
       
       if (data) {
         const requestsList = Object.entries(data)
@@ -28,12 +34,14 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
             ...value
           }));
         
-        console.log('✅ Demandes pending:', requestsList);
+        console.log('✅ GameRequest: Demandes pending =', requestsList);
         setPendingRequests(requestsList);
       } else {
-        console.log('ℹ️ Aucune demande en attente');
+        console.log('ℹ️ GameRequest: Aucune demande trouvée');
         setPendingRequests([]);
       }
+    }, (error) => {
+      console.error('❌ GameRequest: Erreur Firebase =', error);
     });
 
     return () => {
@@ -58,6 +66,18 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
         timestamp: Date.now(),
         read: false
       });
+      
+      // Toast de confirmation
+      const toastDiv = document.createElement('div');
+      toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+      toastDiv.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="text-xl">✅</span>
+          <span class="font-semibold">Ou aksepte jwèt la!</span>
+        </div>
+      `;
+      document.body.appendChild(toastDiv);
+      setTimeout(() => toastDiv.remove(), 3000);
       
       // Ouvrir le modal de mise
       if (onAccept) {
@@ -102,14 +122,20 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
     }
   };
 
-  if (pendingRequests.length === 0) return null;
+  if (pendingRequests.length === 0) {
+    console.log('⏸️ GameRequest: Aucune demande à afficher (return null)');
+    return null;
+  }
+
+  console.log('🎮 GameRequest: Affichage popup pour', pendingRequests.length, 'demande(s)');
 
   return (
     <>
       {pendingRequests.map((request) => (
         <div 
           key={request.id}
-          className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[200]"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          style={{ zIndex: 10000 }}
         >
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full border-4 border-green-500 animate-bounce-in">
             <div className="text-center mb-4">
