@@ -667,15 +667,20 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
       console.error('❌ Erreur suppression ami:', error);
     }
   };
-
-  const proposeGame = async (opponentUid, opponentPseudo) => {
-  if (!currentUser || !userData) return;
+// proposer de jouer 
+ const proposeGame = async (opponentUid, opponentPseudo) => {
+  if (!currentUser || !userData) {
+    console.error('❌ Utilisateur non connecté');
+    alert('Erè! Ou dwe konekte pou jwe.');
+    return;
+  }
 
   try {
+    console.log('🎮 Envoi demande de jeu à:', opponentPseudo);
 
-    //demande de jeu 
     const gameRequestRef = ref(database, `gameRequests/${opponentUid}/${currentUser.uid}`);
-    await set(gameRequestRef, {  // ← NOUVELLE VERSION avec "set"
+    
+    await set(gameRequestRef, {
       from: currentUser.uid,
       fromPseudo: userData.pseudo,
       to: opponentUid,
@@ -684,9 +689,23 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
       timestamp: Date.now()
     });
 
-    alert(`Demann jwèt voye bay ${opponentPseudo}!`);
+    console.log('✅ Demande envoyée avec succès');
+    
+    // Toast de confirmation
+    const toastDiv = document.createElement('div');
+    toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+    toastDiv.innerHTML = `
+      <div class="flex items-center gap-2">
+        <span class="text-xl">🎮</span>
+        <span class="font-semibold">Demann jwèt voye bay ${opponentPseudo}!</span>
+      </div>
+    `;
+    document.body.appendChild(toastDiv);
+    setTimeout(() => toastDiv.remove(), 3000);
+
   } catch (error) {
     console.error('❌ Erreur proposition jeu:', error);
+    alert(`Erè! Pa ka voye demann lan. ${error.message}`);
   }
 };
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Gamepad2, X, Check, Loader } from 'lucide-react';
+import { Gamepad2, X, Check } from 'lucide-react';
 import { database } from '../firebase-config';
 import { ref, onValue, remove, set } from 'firebase/database';
 
@@ -7,11 +7,18 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
   const [pendingRequests, setPendingRequests] = useState([]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      console.log('⚠️ GameRequest: Pas d\'utilisateur connecté');
+      return;
+    }
+
+    console.log('🔄 GameRequest: Écoute des demandes pour', currentUser.uid);
 
     const requestsRef = ref(database, `gameRequests/${currentUser.uid}`);
     const unsubscribe = onValue(requestsRef, (snapshot) => {
       const data = snapshot.val();
+      
+      console.log('📊 GameRequest: Données reçues:', data);
       
       if (data) {
         const requestsList = Object.entries(data)
@@ -21,36 +28,54 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
             ...value
           }));
         
+        console.log('✅ Demandes pending:', requestsList);
         setPendingRequests(requestsList);
       } else {
+        console.log('ℹ️ Aucune demande en attente');
         setPendingRequests([]);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      console.log('🛑 GameRequest: Nettoyage listener');
+      unsubscribe();
+    };
   }, [currentUser]);
 
   const acceptRequest = async (request) => {
     try {
-      console.log('✅ Demande de jeu acceptée:', request);
+      console.log('✅ Acceptation demande:', request);
       
       // Supprimer la demande
       await remove(ref(database, `gameRequests/${currentUser.uid}/${request.from}`));
       
-      // Appeler la fonction pour ouvrir le modal de mise
+      // Notifier l'expéditeur
+      await set(ref(database, `notifications/${request.from}/${Date.now()}`), {
+        type: 'game_accepted',
+        from: currentUser.uid,
+        fromPseudo: userData?.pseudo || 'User',
+        message: `${userData?.pseudo || 'User'} aksepte jwèt la!`,
+        timestamp: Date.now(),
+        read: false
+      });
+      
+      // Ouvrir le modal de mise
       if (onAccept) {
         onAccept(request);
       }
     } catch (error) {
       console.error('❌ Erreur acceptation jeu:', error);
+      alert('Erè! Pa ka aksepte jwèt la.');
     }
   };
 
   const rejectRequest = async (request) => {
     try {
+      console.log('❌ Refus demande:', request);
+      
       await remove(ref(database, `gameRequests/${currentUser.uid}/${request.from}`));
       
-      // Notifier l'autre joueur
+      // Notifier l'expéditeur
       await set(ref(database, `notifications/${request.from}/${Date.now()}`), {
         type: 'game_rejected',
         from: currentUser.uid,
@@ -60,7 +85,18 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
         read: false
       });
 
-      console.log('❌ Demande de jeu refusée');
+      // Toast de confirmation
+      const toastDiv = document.createElement('div');
+      toastDiv.className = 'fixed top-4 right-4 bg-gray-600 text-white px-6 py-3 rounded-lg shadow-lg z-[9999]';
+      toastDiv.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="text-xl">ℹ️</span>
+          <span class="font-semibold">Demann refize</span>
+        </div>
+      `;
+      document.body.appendChild(toastDiv);
+      setTimeout(() => toastDiv.remove(), 3000);
+
     } catch (error) {
       console.error('❌ Erreur rejet jeu:', error);
     }
@@ -73,9 +109,9 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
       {pendingRequests.map((request) => (
         <div 
           key={request.id}
-          className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[200] animate-bounce-in"
+          className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[200]"
         >
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full border-4 border-green-500">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full border-4 border-green-500 animate-bounce-in">
             <div className="text-center mb-4">
               <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
                 <Gamepad2 className="w-8 h-8 text-white" />
