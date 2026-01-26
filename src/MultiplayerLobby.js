@@ -604,17 +604,58 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   }, [currentUser]);
 
   // 🆕 Écouter les demandes d'ami reçues
-  useEffect(() => {
-    if (!currentUser) return;
+  // 🆕 AJOUTER : Écouter les acceptations de demandes (à placer dans useEffect)
+useEffect(() => {
+  if (!currentUser) return;
 
-    const requestsRef = ref(database, `friendRequests/${currentUser.uid}`);
-    const unsubscribe = onValue(requestsRef, (snapshot) => {
-      const data = snapshot.val();
-      setPendingRequestsCount(data ? Object.keys(data).length : 0);
-    });
+  console.log('👂 Écoute des acceptations de jeu...');
 
-    return () => unsubscribe();
-  }, [currentUser]);
+  const myRequestsRef = ref(database, `gameRequests`);
+  
+  const unsubscribe = onValue(myRequestsRef, (snapshot) => {
+    const data = snapshot.val();
+    
+    if (data) {
+      // Parcourir toutes les demandes pour trouver celles que J'AI ENVOYÉES
+      Object.entries(data).forEach(([receiverUid, requests]) => {
+        if (requests && typeof requests === 'object') {
+          Object.entries(requests).forEach(([senderUid, request]) => {
+            // Si c'est MA demande ET qu'elle a été acceptée
+            if (senderUid === currentUser.uid && request.status === 'accepted') {
+              console.log('✅ Demande acceptée par:', request.toPseudo);
+              
+              // Trouver l'adversaire
+              const opponent = allPlayers.find(p => p.uid === receiverUid);
+              
+              if (opponent) {
+                // Ouvrir le BettingModal
+                setSelectedOpponent(opponent);
+                setShowBettingModal(true);
+                
+                // Toast de confirmation
+                const toastDiv = document.createElement('div');
+                toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+                toastDiv.innerHTML = `
+                  <div class="flex items-center gap-2">
+                    <span class="text-xl">✅</span>
+                    <span class="font-semibold">${opponent.pseudo} aksepte jwèt la!</span>
+                  </div>
+                `;
+                document.body.appendChild(toastDiv);
+                setTimeout(() => toastDiv.remove(), 3000);
+                
+                // Supprimer la demande pour éviter de réouvrir le modal
+                remove(ref(database, `gameRequests/${receiverUid}/${currentUser.uid}`));
+              }
+            }
+          });
+        }
+      });
+    }
+  });
+
+  return () => unsubscribe();
+}, [currentUser, allPlayers]); // ✅ Dépendances nécessaires
 
   const isFriend = (uid) => {
     return friends.some(f => f.uid === uid);
@@ -667,6 +708,8 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
       console.error('❌ Erreur suppression ami:', error);
     }
   };
+
+
 // proposer de jouer 
 const proposeGame = async (opponentUid, opponentPseudo) => {
   if (!currentUser || !userData) {
@@ -703,18 +746,21 @@ const proposeGame = async (opponentUid, opponentPseudo) => {
     document.body.appendChild(toastDiv);
     setTimeout(() => toastDiv.remove(), 3000);
 
-    // 🆕 OUVRIR IMMÉDIATEMENT LE BETTING MODAL
-    const opponent = allPlayers.find(p => p.uid === opponentUid);
-    if (opponent) {
-      setSelectedOpponent(opponent);
-      setShowBettingModal(true);
-    }
+    // ❌ RETIRER CETTE PARTIE (ne pas ouvrir le modal immédiatement)
+    // const opponent = allPlayers.find(p => p.uid === opponentUid);
+    // if (opponent) {
+    //   setSelectedOpponent(opponent);
+    //   setShowBettingModal(true);
+    // }
 
   } catch (error) {
     console.error('❌ Erreur proposition jeu:', error);
     alert(`Erè! Pa ka voye demann lan. ${error.message}`);
   }
 };
+
+
+
 
 //jeu accepte 
 const handleGameAccepted = (request) => {

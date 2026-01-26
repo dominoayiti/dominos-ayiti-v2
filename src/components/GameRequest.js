@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Gamepad2, X, Check } from 'lucide-react';
 import { database } from '../firebase-config';
-import { ref, onValue, remove, set } from 'firebase/database';
+import { ref, onValue, remove, set, update } from 'firebase/database';
+
+
 
 const GameRequest = ({ currentUser, userData, onAccept }) => {
   const [pendingRequests, setPendingRequests] = useState([]);
@@ -50,44 +52,58 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
     };
   }, [currentUser]);
 
+  //accepter de jouer...
+
   const acceptRequest = async (request) => {
-    try {
-      console.log('✅ Acceptation demande:', request);
-      
-      // Supprimer la demande
-      await remove(ref(database, `gameRequests/${currentUser.uid}/${request.from}`));
-      
-      // Notifier l'expéditeur
-      await set(ref(database, `notifications/${request.from}/${Date.now()}`), {
-        type: 'game_accepted',
-        from: currentUser.uid,
-        fromPseudo: userData?.pseudo || 'User',
-        message: `${userData?.pseudo || 'User'} aksepte jwèt la!`,
-        timestamp: Date.now(),
-        read: false
-      });
-      
-      // Toast de confirmation
-      const toastDiv = document.createElement('div');
-      toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
-      toastDiv.innerHTML = `
-        <div class="flex items-center gap-2">
-          <span class="text-xl">✅</span>
-          <span class="font-semibold">Ou aksepte jwèt la!</span>
-        </div>
-      `;
-      document.body.appendChild(toastDiv);
-      setTimeout(() => toastDiv.remove(), 3000);
-      
-      // Ouvrir le modal de mise
-      if (onAccept) {
-        onAccept(request);
-      }
-    } catch (error) {
-      console.error('❌ Erreur acceptation jeu:', error);
-      alert('Erè! Pa ka aksepte jwèt la.');
+  try {
+    console.log('✅ Acceptation demande:', request);
+    
+    // ✅ MARQUER COMME ACCEPTÉ au lieu de supprimer directement
+    await update(ref(database, `gameRequests/${currentUser.uid}/${request.from}`), {
+      status: 'accepted',
+      acceptedAt: Date.now()
+    });
+    
+    // Notifier l'expéditeur
+    await set(ref(database, `notifications/${request.from}/${Date.now()}`), {
+      type: 'game_accepted',
+      from: currentUser.uid,
+      fromPseudo: userData?.pseudo || 'User',
+      message: `${userData?.pseudo || 'User'} aksepte jwèt la!`,
+      timestamp: Date.now(),
+      read: false
+    });
+    
+    // Toast de confirmation
+    const toastDiv = document.createElement('div');
+    toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+    toastDiv.innerHTML = `
+      <div class="flex items-center gap-2">
+        <span class="text-xl">✅</span>
+        <span class="font-semibold">Ou aksepte jwèt la!</span>
+      </div>
+    `;
+    document.body.appendChild(toastDiv);
+    setTimeout(() => toastDiv.remove(), 3000);
+    
+    // ✅ Ouvrir le modal de mise pour celui qui accepte
+    if (onAccept) {
+      onAccept(request);
     }
-  };
+    
+    // ✅ Supprimer la demande après un délai (pour laisser le temps à l'autre de voir l'acceptation)
+    setTimeout(async () => {
+      await remove(ref(database, `gameRequests/${currentUser.uid}/${request.from}`));
+    }, 2000);
+    
+  } catch (error) {
+    console.error('❌ Erreur acceptation jeu:', error);
+    alert('Erè! Pa ka aksepte jwèt la.');
+  }
+};
+
+
+
 
   const rejectRequest = async (request) => {
     try {
