@@ -1,27 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Users, Wifi, WifiOff, UserPlus, UserMinus, Gamepad2, Coins, User, LogOut, ArrowLeft, Search, X, Plus, DollarSign, MessageCircle, Send, Bell, Check, Loader } from 'lucide-react';
 import { useAuth } from './useAuth';
 import { database } from './firebase-config';
 import { ref, onValue, update, remove, set } from 'firebase/database';
+import BettingModal from './components/BettingModal';  // ← AJOUTER CETTE LIGNE
 import GameRequest from './components/GameRequest';
-import BettingModal from './components/BettingModal';
-import MultiplayerGame from './components/MultiplayerGame';
+
 
 // ============================================
 // CONFIGURATION - CHANGEZ L'URL DE VOTRE BACKEND ICI
 // ============================================
 //const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'https://dominos-ayiti-v2.onrender.com';
 
-  const BACKEND_URL = 'https://dominos-ayiti-v2.onrender.com';
-  const TokenRechargeModal = ({ onClose, currentTokens }) => {
+const BACKEND_URL = 'https://dominos-ayiti-v2.onrender.com';
+const TokenRechargeModal = ({ onClose, currentTokens }) => {
   const { currentUser, userData } = useAuth();
   const [selectedAmount, setSelectedAmount] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
-  
 
   const rechargeOptions = [
-    { tokens: 20, price: '100', currency: 'HTG' },
+    { tokens: 10, price: '100', currency: 'HTG' },
     { tokens: 100, price: '500', currency: 'HTG' },
     { tokens: 200, price: '1,000', currency: 'HTG' },
     { tokens: 500, price: '2,500', currency: 'HTG' },
@@ -41,25 +40,21 @@ import MultiplayerGame from './components/MultiplayerGame';
 
   // 🆕 Fonction pour gérer le paiement MonCash
   const handleMonCashPayment = async () => {
-  if (!selectedAmount) {
-    alert('Tanpri chwazi yon kantite jeton!');
-    return;
-  }
+    if (!selectedAmount) {
+      alert('Tanpri chwazi yon kantite jeton!');
+      return;
+    }
 
-  if (!currentUser || !userData) {
-    alert('Erè: Utilisateur non connecté');
-    return;
-  }
+    if (!currentUser || !userData) {
+      alert('Erè: Utilisateur non connecté');
+      return;
+    }
 
-  setIsProcessing(true);
-  setProcessingMessage('Koneksyon ak sèvè...');
+    setIsProcessing(true);
+    setProcessingMessage('Kreye peman MonCash...');
 
- 
-
-  setProcessingMessage('Kreye peman MonCash...');
-
-  try {
-    console.log('🔄 Création paiement MonCash...');
+    try {
+      console.log('🔄 Création paiement MonCash...');
 
       // Étape 1: Créer le paiement sur le backend
       const response = await fetch(`${BACKEND_URL}/api/moncash/create-payment`, {
@@ -105,54 +100,35 @@ import MultiplayerGame from './components/MultiplayerGame';
     }
   };
 
-  // 🆕 Vérifier les paiements en attente au chargement
-useEffect(() => {
-  const checkPendingPayment = async () => {
-    const pendingOrder = localStorage.getItem('pendingMonCashOrder');
 
-    if (!pendingOrder) return;
 
-    const orderData = JSON.parse(pendingOrder);
-    console.log('🔍 Paiement en attente détecté:', orderData);
-
-    const isExpired = (Date.now() - orderData.timestamp) > 10 * 60 * 1000;
-    if (isExpired) {
-      localStorage.removeItem('pendingMonCashOrder');
-      return;
-    }
-
-    const shouldVerify = window.confirm(
-      `Ou te kòmanse yon peman MonCash pou ${orderData.tokens} jetons.\n\nÈske ou fini peye? Klike OK pou verifye.`
-    );
-
-    if (!shouldVerify) return;
-
+ // 🆕 Fonction pour vérifier un paiement (avec useCallback)
+  const verifyPayment = useCallback(async (orderId) => {
     setIsProcessing(true);
     setProcessingMessage('Verifikasyon peman...');
 
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/api/moncash/verify-payment`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId: orderData.orderId })
-        }
-      );
+      const response = await fetch(`${BACKEND_URL}/api/moncash/verify-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ orderId })
+      });
 
       const data = await response.json();
 
       if (data.success) {
         localStorage.removeItem('pendingMonCashOrder');
-        alert(
-          `🎉 Felisitasyon!\n\n${data.tokens} jetons ajoute.\n\nNouvo balans: ${data.newBalance}`
-        );
+        alert(`🎉 Felisitasyon!\n\n${data.tokens} jetons ajoute nan kont ou.\n\nNouvo balans: ${data.newBalance} jetons`);
         onClose();
-      } else if (data.status === 'pending') {
-        alert('⏳ Peman toujou an tretman.');
       } else {
-        alert('❌ Peman pa reyisi.');
-        localStorage.removeItem('pendingMonCashOrder');
+        if (data.status === 'pending') {
+          alert('⏳ Peman ou toujou nan trete.\n\nTanpri tann yon ti moman epi eseye ankò.');
+        } else {
+          alert('❌ Peman pa reyisi.\n\nEseye ankò oswa kontakte asistans.');
+          localStorage.removeItem('pendingMonCashOrder');
+        }
       }
     } catch (error) {
       console.error('❌ Erreur vérification:', error);
@@ -161,13 +137,41 @@ useEffect(() => {
       setIsProcessing(false);
       setProcessingMessage('');
     }
+  }, [onClose]); // ← AJOUTER onClose comme dépendance
+
+  // 🆕 Vérifier les paiements en attente au chargement
+useEffect(() => {
+  const checkPendingPayment = async () => {
+    const pendingOrder = localStorage.getItem('pendingMonCashOrder');
+    
+    if (pendingOrder) {
+      const orderData = JSON.parse(pendingOrder);
+      console.log('🔍 Paiement en attente détecté:', orderData);
+
+      const isExpired = (Date.now() - orderData.timestamp) > 10 * 60 * 1000;
+      
+      if (isExpired) {
+        localStorage.removeItem('pendingMonCashOrder');
+        return;
+      }
+
+      const shouldVerify = window.confirm(
+        `Ou te kòmanse yon peman MonCash pou ${orderData.tokens} jetons.\n\nÈske ou fini peye? Klike OK pou verifye.`
+      );
+
+      if (shouldVerify) {
+        await verifyPayment(orderData.orderId);
+      }
+    }
   };
 
   checkPendingPayment();
-}, [onClose]); // ✅ dépendances vides
 
+}, 
 
-  
+[onClose, verifyPayment]); // ✅ Ajoutez verifyPayment ici
+
+ 
 
   const handleRecharge = (method) => {
     if (!selectedAmount) {
@@ -291,39 +295,31 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   const [processing, setProcessing] = useState(false);
   const previousRequestsLength = useRef(0); // ✅ Ajoutez cette ligne
 
- useEffect(() => {
-  if (!currentUser) return;
+  useEffect(() => {
+    if (!currentUser) return;
 
-  const requestsRef = ref(database, `friendRequests/${currentUser.uid}`);
-
-  const unsubscribe = onValue(requestsRef, (snapshot) => {
-    const data = snapshot.val();
-
-    if (data) {
-      const requestsList = Object.entries(data).map(([key, value]) => ({
-        id: key,
-        ...value
-      }));
-
-      setRequests(requestsList);
-      previousRequestsLength.current = requestsList.length;
-    } else {
-      // Fermer automatiquement le modal s'il n'y a plus de demandes
-      if (previousRequestsLength.current > 0) {
-        onClose();
+    const requestsRef = ref(database, `friendRequests/${currentUser.uid}`);
+    const unsubscribe = onValue(requestsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const requestsList = Object.entries(data).map(([key, value]) => ({
+          id: key,
+          ...value
+        }));
+        setRequests(requestsList);
+        previousRequestsLength.current = requestsList.length; // ✅ Mettez à jour la ref
+      } else {
+        // Fermer automatiquement le modal s'il n'y a plus de demandes
+        if (previousRequestsLength.current > 0) { // ✅ Utilisez la ref
+          onClose();
+        }
+        setRequests([]);
+        previousRequestsLength.current = 0; // ✅ Reset la ref
       }
+    });
 
-      setRequests([]);
-      previousRequestsLength.current = 0;
-    }
-  });
-
-  // Nettoyage Firebase listener
-  return () => unsubscribe();
-}, [currentUser, onClose]);
-
-
-   // ✅ Seulement currentUser et onClose
+    return () => unsubscribe();
+  }, [currentUser, onClose]); // ✅ Seulement currentUser et onClose
 
   const acceptRequest = async (request) => {
     if (processing) return;
@@ -521,13 +517,6 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
 
 
 
-
-
-
-
-
-
-
   const MultiplayerMenu = ({ onBack, playerTokens }) => {
   const { currentUser, userData, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('online');
@@ -538,9 +527,55 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [showFriendRequests, setShowFriendRequests] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+
   const [showBettingModal, setShowBettingModal] = useState(false);
-  const [selectedOpponent, setSelectedOpponent] = useState(null);
-  const [activeGame, setActiveGame] = useState(null);
+  const [gameOpponent, setGameOpponent] = useState(null);
+  
+
+
+   // 🆕 AJOUTEZ CE USEEFFECT pour écouter les acceptations de jeu
+  useEffect(() => {
+    if (!currentUser) return;
+
+    console.log('👂 Écoute acceptations de jeu pour:', currentUser.uid);
+
+    const myRequestsRef = ref(database, 'gameRequests');
+    
+    const unsubscribe = onValue(myRequestsRef, (snapshot) => {
+      const data = snapshot.val();
+      
+      if (data) {
+        // Parcourir TOUS les utilisateurs pour trouver les demandes envoyées par moi
+        Object.entries(data).forEach(([recipientUid, requests]) => {
+          if (requests[currentUser.uid]) {
+            const myRequest = requests[currentUser.uid];
+            
+            // Si ma demande a été acceptée
+            if (myRequest.status === 'accepted' && myRequest.from === currentUser.uid) {
+              console.log('✅ Demande acceptée par:', recipientUid);
+              
+              // Trouver les infos de l'adversaire
+              const opponent = allPlayers.find(p => p.uid === recipientUid);
+              
+              if (opponent) {
+                console.log('🎮 Ouverture modal de mise avec:', opponent.pseudo);
+                
+                setGameOpponent(opponent);
+                setShowBettingModal(true);
+                
+                // Nettoyer la demande après 2 secondes
+                setTimeout(async () => {
+                  await remove(ref(database, `gameRequests/${recipientUid}/${currentUser.uid}`));
+                }, 2000);
+              }
+            }
+          }
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, allPlayers]);
 
   // Charger tous les joueurs
   useEffect(() => {
@@ -604,64 +639,23 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   }, [currentUser]);
 
   // 🆕 Écouter les demandes d'ami reçues
-  // 🆕 AJOUTER : Écouter les acceptations de demandes (à placer dans useEffect)
-useEffect(() => {
-  if (!currentUser) return;
+  useEffect(() => {
+    if (!currentUser) return;
 
-  console.log('👂 Écoute des acceptations de jeu...');
+    const requestsRef = ref(database, `friendRequests/${currentUser.uid}`);
+    const unsubscribe = onValue(requestsRef, (snapshot) => {
+      const data = snapshot.val();
+      setPendingRequestsCount(data ? Object.keys(data).length : 0);
+    });
 
-  const myRequestsRef = ref(database, `gameRequests`);
-  
-  const unsubscribe = onValue(myRequestsRef, (snapshot) => {
-    const data = snapshot.val();
-    
-    if (data) {
-      // Parcourir toutes les demandes pour trouver celles que J'AI ENVOYÉES
-      Object.entries(data).forEach(([receiverUid, requests]) => {
-        if (requests && typeof requests === 'object') {
-          Object.entries(requests).forEach(([senderUid, request]) => {
-            // Si c'est MA demande ET qu'elle a été acceptée
-            if (senderUid === currentUser.uid && request.status === 'accepted') {
-              console.log('✅ Demande acceptée par:', request.toPseudo);
-              
-              // Trouver l'adversaire
-              const opponent = allPlayers.find(p => p.uid === receiverUid);
-              
-              if (opponent) {
-                // Ouvrir le BettingModal
-                setSelectedOpponent(opponent);
-                setShowBettingModal(true);
-                
-                // Toast de confirmation
-                const toastDiv = document.createElement('div');
-                toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
-                toastDiv.innerHTML = `
-                  <div class="flex items-center gap-2">
-                    <span class="text-xl">✅</span>
-                    <span class="font-semibold">${opponent.pseudo} aksepte jwèt la!</span>
-                  </div>
-                `;
-                document.body.appendChild(toastDiv);
-                setTimeout(() => toastDiv.remove(), 3000);
-                
-                // Supprimer la demande pour éviter de réouvrir le modal
-                remove(ref(database, `gameRequests/${receiverUid}/${currentUser.uid}`));
-              }
-            }
-          });
-        }
-      });
-    }
-  });
-
-  return () => unsubscribe();
-}, [currentUser, allPlayers]); // ✅ Dépendances nécessaires
+    return () => unsubscribe();
+  }, [currentUser]);
 
   const isFriend = (uid) => {
     return friends.some(f => f.uid === uid);
   };
 
-  const filteredPlayers = allPlayers
+    const filteredPlayers = allPlayers
     .filter(player => player.uid !== currentUser.uid)
     .filter(player => 
       player.pseudo?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -710,83 +704,51 @@ useEffect(() => {
   };
 
 
-// proposer de jouer 
-const proposeGame = async (opponentUid, opponentPseudo) => {
-  if (!currentUser || !userData) {
-    console.error('❌ Utilisateur non connecté');
-    alert('Erè! Ou dwe konekte pou jwe.');
-    return;
-  }
+//sproposer un jeu
+  const proposeGame = async (opponentUid, opponentPseudo) => {
+    if (!currentUser || !userData) return;
 
-  try {
-    console.log('🎮 Envoi demande de jeu à:', opponentPseudo);
+    try {
+      const gameRequestRef = ref(database, `gameRequests/${opponentUid}/${currentUser.uid}`);
+      await update(gameRequestRef, {
+        from: currentUser.uid,
+        fromPseudo: userData.pseudo,
+        to: opponentUid,
+        toPseudo: opponentPseudo,
+        status: 'pending',
+        timestamp: Date.now()
+      });
 
-    const gameRequestRef = ref(database, `gameRequests/${opponentUid}/${currentUser.uid}`);
-    
-    await set(gameRequestRef, {
-      from: currentUser.uid,
-      fromPseudo: userData.pseudo,
-      to: opponentUid,
-      toPseudo: opponentPseudo,
-      status: 'pending',
-      timestamp: Date.now()
-    });
-
-    console.log('✅ Demande envoyée avec succès');
-    
-    // Toast de confirmation
-    const toastDiv = document.createElement('div');
-    toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
-    toastDiv.innerHTML = `
-      <div class="flex items-center gap-2">
-        <span class="text-xl">🎮</span>
-        <span class="font-semibold">Demann jwèt voye bay ${opponentPseudo}!</span>
-      </div>
-    `;
-    document.body.appendChild(toastDiv);
-    setTimeout(() => toastDiv.remove(), 3000);
-
-    // ❌ RETIRER CETTE PARTIE (ne pas ouvrir le modal immédiatement)
-    // const opponent = allPlayers.find(p => p.uid === opponentUid);
-    // if (opponent) {
-    //   setSelectedOpponent(opponent);
-    //   setShowBettingModal(true);
-    // }
-
-  } catch (error) {
-    console.error('❌ Erreur proposition jeu:', error);
-    alert(`Erè! Pa ka voye demann lan. ${error.message}`);
-  }
-};
+      alert(`Demann jwèt voye bay ${opponentPseudo}!`);
+    } catch (error) {
+      console.error('❌ Erreur proposition jeu:', error);
+    }
+  };
 
 
-
-
-//jeu accepte 
-const handleGameAccepted = (request) => {
-  const opponent = allPlayers.find(p => p.uid === request.from);
-  if (opponent) {
-    setSelectedOpponent(opponent);
-    setShowBettingModal(true);
-  }
-};
-
-const handleStartGame = (gameData) => {
-  setShowBettingModal(false);
-  setActiveGame(gameData);
-};
-
-const handleExitGame = () => {
-  setActiveGame(null);
-  setSelectedOpponent(null);
-};
-
+  
   const handleLogout = async () => {
     await logout();
     onBack();
   };
 
-  //fonction return
+
+  // 🆕 AJOUTEZ CES DEUX FONCTIONS ICI (ligne 313)
+  const handleGameAccept = (opponent) => {
+    console.log('🎮 Ouverture modal de mise pour:', opponent);
+    setGameOpponent(opponent);
+    setShowBettingModal(true);
+  };
+
+  const handleStartMultiplayerGame = (gameData) => {
+    console.log('🎮 Démarrage du jeu multijoueur:', gameData);
+    alert(`Jeu prêt à commencer!\nMise: ${gameData.bet} jetons\nVs: ${gameData.player2Pseudo}`);
+    setShowBettingModal(false);
+    setGameOpponent(null);
+  };
+
+  
+
   return (
     <div className="min-h-screen bg-cover bg-center p-3" style={{backgroundImage: 'url(/gran_lakou.jpg)'}}>
       <div className="max-w-4xl mx-auto">
@@ -1161,6 +1123,10 @@ const handleExitGame = () => {
         </div>
       </div>
 
+
+
+
+
       {showRechargeModal && (
         <TokenRechargeModal 
           onClose={() => setShowRechargeModal(false)} 
@@ -1176,35 +1142,67 @@ const handleExitGame = () => {
         />
       )}
 
-       {/* Demandes de jeu */}
-      <GameRequest 
-        currentUser={currentUser}
-        userData={userData}
-        onAccept={handleGameAccepted}
-      />
+      
 
-      {/* Modal de mise */}
-      {showBettingModal && selectedOpponent && (
+      
+      {showBettingModal && gameOpponent && (
         <BettingModal
           currentUser={currentUser}
           userData={userData}
-          opponent={selectedOpponent}
+          opponent={gameOpponent}
           onClose={() => {
             setShowBettingModal(false);
-            setSelectedOpponent(null);
+            setGameOpponent(null);
           }}
-          onStartGame={handleStartGame}
+          onStartGame={(gameData) => {
+            console.log('🎮 Démarrage du jeu:', gameData);
+            // TODO: Implémenter le démarrage du jeu
+            setShowBettingModal(false);
+            setGameOpponent(null);
+          }}
         />
       )}
 
-      {/* Jeu actif */}
-      {activeGame && (
-        <MultiplayerGame
-          gameData={activeGame}
-          currentUser={currentUser}
-          onExit={handleExitGame}
+      {showRechargeModal && (
+        <TokenRechargeModal 
+          onClose={() => setShowRechargeModal(false)} 
+          currentTokens={userData?.tokens || playerTokens}
         />
       )}
+
+      {showFriendRequests && (
+        <FriendRequestsModal 
+          currentUser={currentUser}
+          userData={userData}
+          onClose={() => setShowFriendRequests(false)}
+        />
+      )}
+
+{/* BettingModal */}
+{showBettingModal && gameOpponent && (
+  <BettingModal
+    currentUser={currentUser}
+    userData={userData}
+    opponent={gameOpponent}
+    onClose={() => {
+      setShowBettingModal(false);
+      setGameOpponent(null);
+    }}
+    onStartGame={handleStartMultiplayerGame}
+  />
+)}
+
+
+{/* GameRequest Component */}
+<GameRequest
+  currentUser={currentUser}
+  userData={userData}
+  onAccept={handleGameAccept}
+/>
+
+
+
+
 
     </div>
   );

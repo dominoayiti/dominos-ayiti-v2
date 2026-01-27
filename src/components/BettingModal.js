@@ -10,6 +10,7 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
   const [error, setError] = useState('');
   const [gameSession, setGameSession] = useState(null);
   const [isCancelled, setIsCancelled] = useState(false);
+  
 
   // Générer un ID de session UNIFIÉ pour les deux joueurs
   useEffect(() => {
@@ -76,11 +77,71 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
     return () => unsubscribe();
   }, [gameSession, currentUser.uid, onClose]);
 
-  // Vérifier si les deux joueurs ont misé
+  // ✅ NOUVEAU : Écouter les erreurs de fonds insuffisants
+  useEffect(() => {
+    if (!gameSession) return;
+
+    const insufficientRef = ref(database, `gameBets/${gameSession}/insufficient_funds`);
+    
+    const unsubscribe = onValue(insufficientRef, (snapshot) => {
+      const data = snapshot.val();
+      
+      if (data && data.targetUid === currentUser.uid) {
+        console.log('⚠️ L\'adversaire a tenté de miser plus que vos jetons disponibles');
+        
+        // Toast pour informer le joueur
+        const toastDiv = document.createElement('div');
+        toastDiv.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+        toastDiv.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="text-xl">⚠️</span>
+            <div>
+              <p class="font-semibold">${data.byPseudo} te mande ${data.requestedAmount} jetons</p>
+              <p class="text-sm">Men ou gen sèlman ${data.opponentTokens} jetons</p>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(toastDiv);
+        setTimeout(() => {
+          toastDiv.remove();
+          onClose();
+        }, 4000);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [gameSession, currentUser.uid, onClose]);
+
+  // ✅ CORRIGÉ : Vérifier si les deux joueurs ont misé avec validation finale
   useEffect(() => {
     if (myBet && opponentBet && myBet === opponentBet) {
       console.log('✅ Les deux joueurs ont misé le même montant:', myBet);
       
+      // ✅ VÉRIFICATION FINALE : Les deux joueurs ont-ils assez de jetons ?
+      const currentPlayerHasEnough = myBet <= (userData?.tokens || 0);
+      const opponentHasEnough = opponentBet <= (opponent?.tokens || 0);
+      
+      if (!currentPlayerHasEnough || !opponentHasEnough) {
+        console.error('❌ Fonds insuffisants détectés après mise!');
+        
+        const toastDiv = document.createElement('div');
+        toastDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+        toastDiv.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="text-xl">❌</span>
+            <span class="font-semibold">Erè! Match enposib - Jeton ensifisan</span>
+          </div>
+        `;
+        document.body.appendChild(toastDiv);
+        setTimeout(() => {
+          toastDiv.remove();
+          handleCancel();
+        }, 3000);
+        
+        return;
+      }
+      
+      // ✅ Tout est OK, lancer le jeu
       setTimeout(() => {
         const gameData = {
           sessionId: gameSession,
@@ -106,7 +167,7 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
       return;
     }
 
-    // Vérifier si le joueur a assez de jetons
+    // ✅ VÉRIFICATION JOUEUR ACTUEL
     if (amount > (userData?.tokens || 0)) {
       setError('Ou pa gen ase jeton!');
       
@@ -133,6 +194,43 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
         toastDiv.remove();
         handleCancel();
       }, 3000);
+      
+      return;
+    }
+
+    // ✅ NOUVELLE VÉRIFICATION : L'adversaire a-t-il assez de jetons ?
+    if (opponent && amount > (opponent.tokens || 0)) {
+      setError(`${opponent.pseudo} pa gen ase jeton pou mize ${amount}!`);
+      
+      // Notifier l'adversaire qu'il n'a pas assez de jetons
+      const notifRef = ref(database, `gameBets/${gameSession}/insufficient_funds`);
+      await set(notifRef, {
+        by: currentUser.uid,
+        byPseudo: userData.pseudo,
+        targetUid: opponent.uid,
+        targetPseudo: opponent.pseudo,
+        requestedAmount: amount,
+        opponentTokens: opponent.tokens || 0,
+        timestamp: Date.now()
+      });
+
+      // Toast local expliquant le problème
+      const toastDiv = document.createElement('div');
+      toastDiv.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+      toastDiv.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="text-xl">⚠️</span>
+          <div>
+            <p class="font-semibold">${opponent.pseudo} pa gen ase jeton!</p>
+            <p class="text-sm">Li gen ${opponent.tokens || 0} jetons, men ou mande ${amount}</p>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(toastDiv);
+      setTimeout(() => {
+        toastDiv.remove();
+        handleCancel();
+      }, 4000);
       
       return;
     }
@@ -249,6 +347,10 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
               <div>
                 <p className="text-sm text-gray-600">Advèsè:</p>
                 <p className="font-bold text-gray-800">{opponent.pseudo}</p>
+                <div className="flex items-center gap-1 mt-1">
+                  <Coins className="w-3 h-3 text-yellow-600" />
+                  <span className="text-xs text-gray-600">{opponent.tokens || 0} jetons</span>
+                </div>
               </div>
               {opponentBet ? (
                 <div className="flex items-center gap-2 bg-green-500 text-white px-3 py-2 rounded-lg">
@@ -280,11 +382,23 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
               <h3 className="text-lg font-bold text-gray-800 mb-4">
                 {opponentBet ? `Mize ${opponentBet} jetons pou matche` : 'Chwazi mize ou'}
               </h3>
+              
+              {/* ✅ Message d'attente si pas de mise adversaire */}
+              {!opponentBet && (
+                <div className="bg-blue-50 border-l-4 border-blue-400 p-3 mb-4 rounded">
+                  <p className="text-sm text-blue-700">
+                    ⏳ Tann {opponent.pseudo} chwazi mize li...
+                  </p>
+                </div>
+              )}
+              
               <div className="grid grid-cols-3 gap-3">
                 {betOptions.map((amount) => {
                   const canAfford = amount <= (userData?.tokens || 0);
+                  const opponentCanAfford = amount <= (opponent?.tokens || 0);
                   const mustMatch = opponentBet && amount !== opponentBet;
-                  const isDisabled = !canAfford || mustMatch;
+                  const waitingForOpponent = !opponentBet;
+                  const isDisabled = !canAfford || !opponentCanAfford || mustMatch || waitingForOpponent;
 
                   return (
                     <button
@@ -298,6 +412,15 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
                           ? 'border-green-600 bg-green-50 hover:bg-green-100 shadow-lg animate-pulse'
                           : 'border-yellow-300 bg-yellow-50 hover:bg-yellow-100 hover:shadow-md'
                       }`}
+                      title={
+                        waitingForOpponent
+                          ? `Tann ${opponent.pseudo} mize`
+                          : !canAfford 
+                          ? 'Ou pa gen ase jeton' 
+                          : !opponentCanAfford 
+                          ? `${opponent.pseudo} pa gen ase jeton` 
+                          : ''
+                      }
                     >
                       <div className="flex items-center justify-center mb-2">
                         <Coins className={`w-6 h-6 ${
@@ -309,6 +432,9 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
                       }`}>
                         {amount}
                       </p>
+                      {!opponentCanAfford && !waitingForOpponent && (
+                        <p className="text-xs text-red-500 mt-1">Advèsè pa gen</p>
+                      )}
                     </button>
                   );
                 })}
