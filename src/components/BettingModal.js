@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Coins, X, Loader, AlertCircle } from 'lucide-react';
 import { database } from '../firebase-config';
 import { ref, set, onValue, remove } from 'firebase/database';
@@ -19,6 +19,48 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
     setGameSession(sessionId);
     console.log('🎮 Session ID créé:', sessionId);
   }, [currentUser.uid, opponent.uid]);
+
+  // ✅ CORRECTION: Déplacer handleCancel avant les useEffect qui l'utilisent
+  const handleCancel = useCallback(async () => {
+    if (isCancelled) return;
+
+    try {
+      // Marquer comme annulé dans Firebase
+      const cancelRef = ref(database, `gameBets/${gameSession}/cancelled`);
+      await set(cancelRef, {
+        by: currentUser.uid,
+        byPseudo: userData.pseudo,
+        timestamp: Date.now()
+      });
+
+      // Supprimer les mises
+      if (myBet) {
+        await remove(ref(database, `gameBets/${gameSession}/${currentUser.uid}`));
+      }
+
+      // Toast local
+      const toastDiv = document.createElement('div');
+      toastDiv.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+      toastDiv.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="text-xl">⚠️</span>
+          <span class="font-semibold">Ou anile match la</span>
+        </div>
+      `;
+      document.body.appendChild(toastDiv);
+      setTimeout(() => toastDiv.remove(), 2000);
+
+      // Nettoyer Firebase après 3 secondes
+      setTimeout(async () => {
+        await remove(ref(database, `gameBets/${gameSession}`));
+      }, 3000);
+
+    } catch (error) {
+      console.error('❌ Erreur annulation:', error);
+    }
+
+    onClose();
+  }, [isCancelled, gameSession, currentUser.uid, userData.pseudo, myBet, onClose]);
 
   // Écouter les mises de l'adversaire
   useEffect(() => {
@@ -156,7 +198,7 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
         onStartGame(gameData);
       }, 1000);
     }
-  }, [myBet, opponentBet, gameSession, currentUser, userData, opponent, onStartGame]);
+  }, [myBet, opponentBet, gameSession, currentUser, userData, opponent, onStartGame, handleCancel]);
 
   const betOptions = [10, 50, 100, 500, 1000, 5000];
 
@@ -262,47 +304,6 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
     }
   };
 
-  const handleCancel = async () => {
-    if (isCancelled) return;
-
-    try {
-      // Marquer comme annulé dans Firebase
-      const cancelRef = ref(database, `gameBets/${gameSession}/cancelled`);
-      await set(cancelRef, {
-        by: currentUser.uid,
-        byPseudo: userData.pseudo,
-        timestamp: Date.now()
-      });
-
-      // Supprimer les mises
-      if (myBet) {
-        await remove(ref(database, `gameBets/${gameSession}/${currentUser.uid}`));
-      }
-
-      // Toast local
-      const toastDiv = document.createElement('div');
-      toastDiv.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
-      toastDiv.innerHTML = `
-        <div class="flex items-center gap-2">
-          <span class="text-xl">⚠️</span>
-          <span class="font-semibold">Ou anile match la</span>
-        </div>
-      `;
-      document.body.appendChild(toastDiv);
-      setTimeout(() => toastDiv.remove(), 2000);
-
-      // Nettoyer Firebase après 3 secondes
-      setTimeout(async () => {
-        await remove(ref(database, `gameBets/${gameSession}`));
-      }, 3000);
-
-    } catch (error) {
-      console.error('❌ Erreur annulation:', error);
-    }
-
-    onClose();
-  };
-
   if (isCancelled) {
     return null;
   }
@@ -396,9 +397,24 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
                 {betOptions.map((amount) => {
                   const canAfford = amount <= (userData?.tokens || 0);
                   const opponentCanAfford = amount <= (opponent?.tokens || 0);
-                  const mustMatch = opponentBet && amount !== opponentBet;
-                  const waitingForOpponent = !opponentBet;
-                  const isDisabled = !canAfford || !opponentCanAfford || mustMatch || waitingForOpponent;
+                  
+                  // ✅ CORRECTION: Logique de désactivation améliorée
+                  let isDisabled = false;
+                  let disabledReason = '';
+                  
+                  if (!canAfford) {
+                    isDisabled = true;
+                    disabledReason = 'Ou pa gen ase jeton';
+                  } else if (!opponentCanAfford) {
+                    isDisabled = true;
+                    disabledReason = `${opponent.pseudo} pa gen ase jeton`;
+                  } else if (opponentBet) {
+                    // Si l'adversaire a misé, on peut SEULEMENT cliquer sur le même montant
+                    if (amount !== opponentBet) {
+                      isDisabled = true;
+                      disabledReason = `Dwe matche ${opponentBet} jetons`;
+                    }
+                  }
 
                   return (
                     <button
@@ -412,15 +428,7 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
                           ? 'border-green-600 bg-green-50 hover:bg-green-100 shadow-lg animate-pulse'
                           : 'border-yellow-300 bg-yellow-50 hover:bg-yellow-100 hover:shadow-md'
                       }`}
-                      title={
-                        waitingForOpponent
-                          ? `Tann ${opponent.pseudo} mize`
-                          : !canAfford 
-                          ? 'Ou pa gen ase jeton' 
-                          : !opponentCanAfford 
-                          ? `${opponent.pseudo} pa gen ase jeton` 
-                          : ''
-                      }
+                      title={disabledReason || 'Klike pou mize'}
                     >
                       <div className="flex items-center justify-center mb-2">
                         <Coins className={`w-6 h-6 ${
@@ -432,8 +440,8 @@ const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame })
                       }`}>
                         {amount}
                       </p>
-                      {!opponentCanAfford && !waitingForOpponent && (
-                        <p className="text-xs text-red-500 mt-1">Advèsè pa gen</p>
+                      {disabledReason && (
+                        <p className="text-xs text-red-500 mt-1">{disabledReason}</p>
                       )}
                     </button>
                   );

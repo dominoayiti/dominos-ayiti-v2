@@ -532,50 +532,67 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   const [gameOpponent, setGameOpponent] = useState(null);
   
 
+   
 
-   // 🆕 AJOUTEZ CE USEEFFECT pour écouter les acceptations de jeu
-  useEffect(() => {
-    if (!currentUser) return;
+// 🆕 AJOUTEZ CE USEEFFECT pour écouter les acceptations de jeu
+useEffect(() => {  
+  if (!currentUser) return;
 
-    console.log('👂 Écoute acceptations de jeu pour:', currentUser.uid);
+  console.log('👂 Écoute acceptations de jeu pour:', currentUser.uid);
 
-    const myRequestsRef = ref(database, 'gameRequests');
+  const myRequestsRef = ref(database, 'gameRequests');
+  
+  const unsubscribe = onValue(myRequestsRef, (snapshot) => {
+    const data = snapshot.val();
     
-    const unsubscribe = onValue(myRequestsRef, (snapshot) => {
-      const data = snapshot.val();
+    // ✅✅✅ DIAGNOSTIC COMPLET ✅✅✅
+    console.log('🔍🔍🔍 DIAGNOSTIC COMPLET 🔍🔍🔍');
+    console.log('📊 Données brutes Firebase gameRequests:', JSON.stringify(data, null, 2));
+    console.log('👤 Mon UID:', currentUser.uid);
+    console.log('👥 Tous les joueurs:', allPlayers.map(p => ({ uid: p.uid, pseudo: p.pseudo })));
+    
+    if (!data) {
+      console.log('❌ Aucune donnée gameRequests trouvée');
+      return;
+    }
+    
+    // Parcourir TOUTES les clés
+    Object.keys(data).forEach(key => {
+      console.log(`🔑 Clé trouvée: ${key}`);
+      console.log(`📦 Contenu:`, data[key]);
+    });
+    
+    // Chercher MA demande envoyée
+    Object.entries(data).forEach(([recipientUid, requests]) => {
+      console.log(`🔄 Vérification recipient: ${recipientUid}`);
       
-      if (data) {
-        // Parcourir TOUS les utilisateurs pour trouver les demandes envoyées par moi
-        Object.entries(data).forEach(([recipientUid, requests]) => {
-          if (requests[currentUser.uid]) {
-            const myRequest = requests[currentUser.uid];
-            
-            // Si ma demande a été acceptée
-            if (myRequest.status === 'accepted' && myRequest.from === currentUser.uid) {
-              console.log('✅ Demande acceptée par:', recipientUid);
-              
-              // Trouver les infos de l'adversaire
-              const opponent = allPlayers.find(p => p.uid === recipientUid);
-              
-              if (opponent) {
-                console.log('🎮 Ouverture modal de mise avec:', opponent.pseudo);
-                
-                setGameOpponent(opponent);
-                setShowBettingModal(true);
-                
-                // Nettoyer la demande après 2 secondes
-                setTimeout(async () => {
-                  await remove(ref(database, `gameRequests/${recipientUid}/${currentUser.uid}`));
-                }, 2000);
-              }
-            }
+      if (requests[currentUser.uid]) {
+        console.log('🎯 MA DEMANDE TROUVÉE!');
+        console.log('📝 Status:', requests[currentUser.uid].status);
+        console.log('📝 Données complètes:', requests[currentUser.uid]);
+        
+        if (requests[currentUser.uid].status === 'accepted') {
+          console.log('✅✅✅ DEMANDE ACCEPTÉE DÉTECTÉE! ✅✅✅');
+          console.log('🎮 Devrait ouvrir modal avec:', recipientUid);
+          
+          const opponent = allPlayers.find(p => p.uid === recipientUid);
+          console.log('👤 Opponent trouvé:', opponent);
+          
+          if (opponent) {
+            alert(`MODAL DEVRAIT S'OUVRIR AVEC ${opponent.pseudo}!`);
+            setGameOpponent(opponent);
+            setShowBettingModal(true);
+          } else {
+            alert(`ERREUR: Opponent ${recipientUid} non trouvé dans allPlayers!`);
           }
-        });
+        }
       }
     });
+  });
 
-    return () => unsubscribe();
-  }, [currentUser, allPlayers]);
+  return () => unsubscribe();
+}, [currentUser, allPlayers]);
+
 
   // Charger tous les joueurs
   useEffect(() => {
