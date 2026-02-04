@@ -8,7 +8,7 @@ import { useAuth } from './useAuth';
 const DominoGame = () => {
   const [gameState, setGameState] = useState('menu');
   const [playerTokens, setPlayerTokens] = useState(1000);
-  const [setOpponentTokens] = useState(1000);
+  const [ setOpponentTokens] = useState(1000);
   const [currentBet, setCurrentBet] = useState(50);
   const [playerHand, setPlayerHand] = useState([]);
   const [opponentHand, setOpponentHand] = useState([]);

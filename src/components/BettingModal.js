@@ -3,7 +3,7 @@ import { Coins, X, Loader, AlertCircle } from 'lucide-react';
 import { database } from '../firebase-config';
 import { ref, set, onValue, remove } from 'firebase/database';
 
-const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame }) => {
+  const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame }) => {
   const [myBet, setMyBet] = useState(null);
   const [opponentBet, setOpponentBet] = useState(null);
   const [isWaiting, setIsWaiting] = useState(false);

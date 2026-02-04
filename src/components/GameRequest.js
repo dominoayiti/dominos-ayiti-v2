@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Gamepad2, X, Check } from 'lucide-react';
 import { database } from '../firebase-config';
-import { ref, onValue, remove, set, update } from 'firebase/database';
+import { ref, onValue, remove, set,  update } from 'firebase/database';
 
 const GameRequest = ({ currentUser, userData, onAccept }) => {
   const [pendingRequests, setPendingRequests] = useState([]);
@@ -50,60 +50,62 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
     };
   }, [currentUser]);
 
-  const acceptRequest = async (request) => {
-    try {
-      console.log('✅ Acceptation demande:', request);
-      
-      // Marquer comme accepté
-      await update(ref(database, `gameRequests/${currentUser.uid}/${request.from}`), {
-        status: 'accepted',
-        acceptedAt: Date.now()
-      });
-      
-      // Notifier l'expéditeur
-      await set(ref(database, `notifications/${request.from}/${Date.now()}`), {
-        type: 'game_accepted',
-        from: currentUser.uid,
-        fromPseudo: userData?.pseudo || 'User',
-        message: `${userData?.pseudo || 'User'} aksepte jwèt la!`,
-        timestamp: Date.now(),
-        read: false
-      });
-      
-      // Toast de confirmation
-      const toastDiv = document.createElement('div');
-      toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
-      toastDiv.innerHTML = `
-        <div class="flex items-center gap-2">
-          <span class="text-xl">✅</span>
-          <span class="font-semibold">Ou aksepte jwèt la!</span>
-        </div>
-      `;
-      document.body.appendChild(toastDiv);
-      setTimeout(() => toastDiv.remove(), 3000);
-      
-      // ✅ Appeler onAccept pour ouvrir le modal de mise
-      if (onAccept) {
-        // Créer un objet opponent avec les infos nécessaires
-        const opponent = {
-          uid: request.from,
-          pseudo: request.fromPseudo,
-          tokens: request.tokens || 0 // Si vous stockez les tokens dans la demande
-        };
-        onAccept(opponent);
-      }
-      
-      // Supprimer la demande après un délai
-      setTimeout(async () => {
-        await remove(ref(database, `gameRequests/${currentUser.uid}/${request.from}`));
-      }, 2000);
-      
-    } catch (error) {
-      console.error('❌ Erreur acceptation jeu:', error);
-      alert('Erè! Pa ka aksepte jwèt la.');
-    }
-  };
 
+  //accepter la demande de jeu
+ const acceptRequest = async (request) => {
+  try {
+    console.log('✅ Acceptation demande:', request);
+    
+    // ✅ ÉTAPE 1: Marquer comme accepté dans la demande ORIGINALE
+    await update(ref(database, `gameRequests/${currentUser.uid}/${request.from}`), {
+      status: 'accepted',
+      acceptedAt: Date.now(),
+      acceptedBy: currentUser.uid
+    });
+    
+    console.log('✅ Status mis à jour');
+    
+    // ✅ ÉTAPE 2: Notifier l'expéditeur
+    await set(ref(database, `notifications/${request.from}/${Date.now()}`), {
+      type: 'game_accepted',
+      from: currentUser.uid,
+      fromPseudo: userData?.pseudo || 'User',
+      message: `${userData?.pseudo || 'User'} aksepte jwèt la!`,
+      timestamp: Date.now(),
+      read: false
+    });
+    
+    console.log('✅ Notification envoyée');
+    
+    // Toast de confirmation
+    const toastDiv = document.createElement('div');
+    toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+    toastDiv.innerHTML = `
+      <div class="flex items-center gap-2">
+        <span class="text-xl">✅</span>
+        <span class="font-semibold">Ou aksepte jwèt la!</span>
+      </div>
+    `;
+    document.body.appendChild(toastDiv);
+    setTimeout(() => toastDiv.remove(), 3000);
+    
+    // ✅ Ouvrir le modal de mise
+    if (onAccept) {
+      const opponent = {
+        uid: request.from,
+        pseudo: request.fromPseudo,
+        tokens: request.tokens || 0
+      };
+      onAccept(opponent);
+    }
+    
+  } catch (error) {
+    console.error('❌ Erreur acceptation jeu:', error);
+    alert('Erè! Pa ka aksepte jwèt la.');
+  }
+};   
+
+  //rejecter la demande
   const rejectRequest = async (request) => {
     try {
       console.log('❌ Refus demande:', request);

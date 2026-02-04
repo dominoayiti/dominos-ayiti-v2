@@ -2,17 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Users, Wifi, WifiOff, UserPlus, UserMinus, Gamepad2, Coins, User, LogOut, ArrowLeft, Search, X, Plus, DollarSign, MessageCircle, Send, Bell, Check, Loader } from 'lucide-react';
 import { useAuth } from './useAuth';
 import { database } from './firebase-config';
-import { ref, onValue, update, remove, set } from 'firebase/database';
-import BettingModal from './components/BettingModal';  // ← AJOUTER CETTE LIGNE
+import { ref, onValue, update, remove, set, get } from 'firebase/database';
+import BettingModal from './components/BettingModal';
 import GameRequest from './components/GameRequest';
 
-
-// ============================================
-// CONFIGURATION - CHANGEZ L'URL DE VOTRE BACKEND ICI
-// ============================================
-//const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'https://dominos-ayiti-v2.onrender.com';
-
 const BACKEND_URL = 'https://dominos-ayiti-v2.onrender.com';
+
 const TokenRechargeModal = ({ onClose, currentTokens }) => {
   const { currentUser, userData } = useAuth();
   const [selectedAmount, setSelectedAmount] = useState(null);
@@ -38,7 +33,6 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
     { id: 'paypal', name: 'PayPal', logo: '🌐', color: 'from-blue-400 to-blue-500' }
   ];
 
-  // 🆕 Fonction pour gérer le paiement MonCash
   const handleMonCashPayment = async () => {
     if (!selectedAmount) {
       alert('Tanpri chwazi yon kantite jeton!');
@@ -54,9 +48,6 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
     setProcessingMessage('Kreye peman MonCash...');
 
     try {
-      console.log('🔄 Création paiement MonCash...');
-
-      // Étape 1: Créer le paiement sur le backend
       const response = await fetch(`${BACKEND_URL}/api/moncash/create-payment`, {
         method: 'POST',
         headers: {
@@ -71,13 +62,11 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
       });
 
       const data = await response.json();
-      console.log('📊 Réponse backend:', data);
 
       if (!data.success) {
         throw new Error(data.error || 'Erreur création paiement');
       }
 
-      // Étape 2: Sauvegarder l'orderId localement
       localStorage.setItem('pendingMonCashOrder', JSON.stringify({
         orderId: data.orderId,
         tokens: selectedAmount.tokens,
@@ -87,7 +76,6 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
 
       setProcessingMessage('Rediksyon nan MonCash...');
 
-      // Étape 3: Rediriger vers MonCash
       setTimeout(() => {
         window.location.href = data.redirectUrl;
       }, 1000);
@@ -100,9 +88,6 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
     }
   };
 
-
-
- // 🆕 Fonction pour vérifier un paiement (avec useCallback)
   const verifyPayment = useCallback(async (orderId) => {
     setIsProcessing(true);
     setProcessingMessage('Verifikasyon peman...');
@@ -137,41 +122,34 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
       setIsProcessing(false);
       setProcessingMessage('');
     }
-  }, [onClose]); // ← AJOUTER onClose comme dépendance
+  }, [onClose]);
 
-  // 🆕 Vérifier les paiements en attente au chargement
-useEffect(() => {
-  const checkPendingPayment = async () => {
-    const pendingOrder = localStorage.getItem('pendingMonCashOrder');
-    
-    if (pendingOrder) {
-      const orderData = JSON.parse(pendingOrder);
-      console.log('🔍 Paiement en attente détecté:', orderData);
-
-      const isExpired = (Date.now() - orderData.timestamp) > 10 * 60 * 1000;
+  useEffect(() => {
+    const checkPendingPayment = async () => {
+      const pendingOrder = localStorage.getItem('pendingMonCashOrder');
       
-      if (isExpired) {
-        localStorage.removeItem('pendingMonCashOrder');
-        return;
+      if (pendingOrder) {
+        const orderData = JSON.parse(pendingOrder);
+
+        const isExpired = (Date.now() - orderData.timestamp) > 10 * 60 * 1000;
+        
+        if (isExpired) {
+          localStorage.removeItem('pendingMonCashOrder');
+          return;
+        }
+
+        const shouldVerify = window.confirm(
+          `Ou te kòmanse yon peman MonCash pou ${orderData.tokens} jetons.\n\nÈske ou fini peye? Klike OK pou verifye.`
+        );
+
+        if (shouldVerify) {
+          await verifyPayment(orderData.orderId);
+        }
       }
+    };
 
-      const shouldVerify = window.confirm(
-        `Ou te kòmanse yon peman MonCash pou ${orderData.tokens} jetons.\n\nÈske ou fini peye? Klike OK pou verifye.`
-      );
-
-      if (shouldVerify) {
-        await verifyPayment(orderData.orderId);
-      }
-    }
-  };
-
-  checkPendingPayment();
-
-}, 
-
-[onClose, verifyPayment]); // ✅ Ajoutez verifyPayment ici
-
- 
+    checkPendingPayment();
+  }, [onClose, verifyPayment]);
 
   const handleRecharge = (method) => {
     if (!selectedAmount) {
@@ -287,13 +265,11 @@ useEffect(() => {
     </div>
   );
 };
-
-
-// 🆕 Modal pour les demandes d'ami
+// acceptation de demandes d'ami(e)s
 const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   const [requests, setRequests] = useState([]);
   const [processing, setProcessing] = useState(false);
-  const previousRequestsLength = useRef(0); // ✅ Ajoutez cette ligne
+  const previousRequestsLength = useRef(0);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -307,32 +283,26 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
           ...value
         }));
         setRequests(requestsList);
-        previousRequestsLength.current = requestsList.length; // ✅ Mettez à jour la ref
+        previousRequestsLength.current = requestsList.length;
       } else {
-        // Fermer automatiquement le modal s'il n'y a plus de demandes
-        if (previousRequestsLength.current > 0) { // ✅ Utilisez la ref
+        if (previousRequestsLength.current > 0) {
           onClose();
         }
         setRequests([]);
-        previousRequestsLength.current = 0; // ✅ Reset la ref
+        previousRequestsLength.current = 0;
       }
     });
 
     return () => unsubscribe();
-  }, [currentUser, onClose]); // ✅ Seulement currentUser et onClose
+  }, [currentUser, onClose]);
 
   const acceptRequest = async (request) => {
     if (processing) return;
     setProcessing(true);
 
     try {
-      console.log('🔄 Début acceptation...');
-      
-      // 1. Supprimer la demande EN PREMIER (pour éviter le bug du modal)
       await remove(ref(database, `friendRequests/${currentUser.uid}/${request.id}`));
-      console.log('✅ Demande supprimée');
 
-      // 2. Ajouter dans les deux sens
       await set(ref(database, `users/${currentUser.uid}/friends/${request.fromUid}`), {
         uid: request.fromUid,
         pseudo: request.fromPseudo,
@@ -345,9 +315,6 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
         addedAt: Date.now()
       });
 
-      console.log('✅ Amis ajoutés des deux côtés');
-
-      // 3. Notifier l'expéditeur (Kiki) que sa demande a été acceptée
       await set(ref(database, `notifications/${request.fromUid}/${Date.now()}`), {
         type: 'friend_accepted',
         from: currentUser.uid,
@@ -357,9 +324,6 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
         read: false
       });
 
-      console.log('✅ Notification envoyée à', request.fromPseudo);
-
-      // 4. Afficher un toast de succès pour l'utilisateur actuel (haytifx)
       const toastDiv = document.createElement('div');
       toastDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
       toastDiv.innerHTML = `
@@ -370,22 +334,8 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
       `;
       document.body.appendChild(toastDiv);
       setTimeout(() => toastDiv.remove(), 3000);
-
-      console.log('✅ Acceptation terminée avec succès');
     } catch (error) {
       console.error('❌ Erreur acceptation:', error);
-      
-      // Toast d'erreur au lieu d'alert
-      const errorToast = document.createElement('div');
-      errorToast.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999]';
-      errorToast.innerHTML = `
-        <div class="flex items-center gap-2">
-          <span class="text-xl">❌</span>
-          <span class="font-semibold">Erè! Pa ka aksepte demann lan. Eseye ankò.</span>
-        </div>
-      `;
-      document.body.appendChild(errorToast);
-      setTimeout(() => errorToast.remove(), 3000);
     } finally {
       setProcessing(false);
     }
@@ -396,13 +346,8 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
     setProcessing(true);
 
     try {
-      console.log('🔄 Début refus...');
-      
-      // 1. Supprimer la demande EN PREMIER
       await remove(ref(database, `friendRequests/${currentUser.uid}/${request.id}`));
-      console.log('✅ Demande supprimée');
       
-      // 2. Notifier l'expéditeur que la demande a été refusée
       await set(ref(database, `notifications/${request.fromUid}/${Date.now()}`), {
         type: 'friend_rejected',
         from: currentUser.uid,
@@ -412,9 +357,6 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
         read: false
       });
 
-      console.log('✅ Notification de refus envoyée');
-
-      // 3. Toast de confirmation pour l'utilisateur actuel
       const toastDiv = document.createElement('div');
       toastDiv.className = 'fixed top-4 right-4 bg-gray-600 text-white px-6 py-3 rounded-lg shadow-lg z-[9999]';
       toastDiv.innerHTML = `
@@ -425,21 +367,8 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
       `;
       document.body.appendChild(toastDiv);
       setTimeout(() => toastDiv.remove(), 3000);
-
-      console.log('✅ Refus terminé avec succès');
     } catch (error) {
       console.error('❌ Erreur rejet:', error);
-      
-      const errorToast = document.createElement('div');
-      errorToast.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999]';
-      errorToast.innerHTML = `
-        <div class="flex items-center gap-2">
-          <span class="text-xl">❌</span>
-          <span class="font-semibold">Erè! Pa ka refize demann lan. Eseye ankò.</span>
-        </div>
-      `;
-      document.body.appendChild(errorToast);
-      setTimeout(() => errorToast.remove(), 3000);
     } finally {
       setProcessing(false);
     }
@@ -515,9 +444,7 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   );
 };
 
-
-
-  const MultiplayerMenu = ({ onBack, playerTokens }) => {
+const MultiplayerMenu = ({ onBack, playerTokens }) => {
   const { currentUser, userData, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('online');
   const [allPlayers, setAllPlayers] = useState([]);
@@ -527,14 +454,13 @@ const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [showFriendRequests, setShowFriendRequests] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
-
   const [showBettingModal, setShowBettingModal] = useState(false);
   const [gameOpponent, setGameOpponent] = useState(null);
-  
 
-   
 
-// 🆕 AJOUTEZ CE USEEFFECT pour écouter les acceptations de jeu
+
+
+ // Dans MultiplayerMenu.jsx, remplacer le useEffect d'écoute des acceptations
 useEffect(() => {  
   if (!currentUser) return;
 
@@ -542,68 +468,89 @@ useEffect(() => {
 
   const myRequestsRef = ref(database, 'gameRequests');
   
-  const unsubscribe = onValue(myRequestsRef, (snapshot) => {
+  const unsubscribe = onValue(myRequestsRef, async (snapshot) => {
     const data = snapshot.val();
     
-    // ✅✅✅ DIAGNOSTIC COMPLET ✅✅✅
-    console.log('🔍🔍🔍 DIAGNOSTIC COMPLET 🔍🔍🔍');
-    console.log('📊 Données brutes Firebase gameRequests:', JSON.stringify(data, null, 2));
-    console.log('👤 Mon UID:', currentUser.uid);
-    console.log('👥 Tous les joueurs:', allPlayers.map(p => ({ uid: p.uid, pseudo: p.pseudo })));
-    
     if (!data) {
-      console.log('❌ Aucune donnée gameRequests trouvée');
+      console.log('⚠️ Aucune donnée gameRequests');
       return;
     }
     
-    // Parcourir TOUTES les clés
-    Object.keys(data).forEach(key => {
-      console.log(`🔑 Clé trouvée: ${key}`);
-      console.log(`📦 Contenu:`, data[key]);
-    });
+    console.log('📊 gameRequests data:', data);
     
-    // Chercher MA demande envoyée
-    Object.entries(data).forEach(([recipientUid, requests]) => {
-      console.log(`🔄 Vérification recipient: ${recipientUid}`);
-      
-      if (requests[currentUser.uid]) {
-        console.log('🎯 MA DEMANDE TROUVÉE!');
-        console.log('📝 Status:', requests[currentUser.uid].status);
-        console.log('📝 Données complètes:', requests[currentUser.uid]);
-        
-        if (requests[currentUser.uid].status === 'accepted') {
-          console.log('✅✅✅ DEMANDE ACCEPTÉE DÉTECTÉE! ✅✅✅');
-          console.log('🎮 Devrait ouvrir modal avec:', recipientUid);
+    let modalOpened = false;
+    
+    // ✅ CAS 1: Je suis le DESTINATAIRE et j'ai accepté
+    if (data[currentUser.uid]) {
+      for (const [senderUid, request] of Object.entries(data[currentUser.uid])) {
+        if (request.status === 'accepted' && request.to === currentUser.uid && !modalOpened) {
+          console.log('✅ J\'ai accepté une demande de:', senderUid);
           
-          const opponent = allPlayers.find(p => p.uid === recipientUid);
-          console.log('👤 Opponent trouvé:', opponent);
+          // ✅ RÉCUPÉRER LES DONNÉES DE L'ADVERSAIRE DEPUIS FIREBASE
+          const opponentRef = ref(database, `users/${senderUid}`);
+          const opponentSnapshot = await get(opponentRef);
+          const opponentData = opponentSnapshot.val();
           
-          if (opponent) {
-            alert(`MODAL DEVRAIT S'OUVRIR AVEC ${opponent.pseudo}!`);
+          if (opponentData) {
+            const opponent = {
+              uid: senderUid,
+              pseudo: opponentData.pseudo || 'Sans nom',
+              tokens: opponentData.tokens || 0
+            };
+            
+            console.log('🎮 Ouverture modal pour:', opponent.pseudo);
             setGameOpponent(opponent);
             setShowBettingModal(true);
-          } else {
-            alert(`ERREUR: Opponent ${recipientUid} non trouvé dans allPlayers!`);
+            modalOpened = true;
           }
         }
       }
-    });
+    }
+    
+    // ✅ CAS 2: Je suis l'EXPÉDITEUR et on a accepté MA demande
+    for (const [recipientUid, requests] of Object.entries(data)) {
+      if (recipientUid === currentUser.uid || modalOpened) continue;
+      
+      if (requests[currentUser.uid]) {
+        const myRequest = requests[currentUser.uid];
+        
+        if (myRequest.status === 'accepted' && myRequest.from === currentUser.uid && !modalOpened) {
+          console.log('✅ Ma demande acceptée par:', recipientUid);
+          
+          // ✅ RÉCUPÉRER LES DONNÉES DE L'ADVERSAIRE DEPUIS FIREBASE
+          const opponentRef = ref(database, `users/${recipientUid}`);
+          const opponentSnapshot = await get(opponentRef);
+          const opponentData = opponentSnapshot.val();
+          
+          if (opponentData) {
+            const opponent = {
+              uid: recipientUid,
+              pseudo: opponentData.pseudo || 'Sans nom',
+              tokens: opponentData.tokens || 0
+            };
+            
+            console.log('🎮 Ouverture modal pour:', opponent.pseudo);
+            setGameOpponent(opponent);
+            setShowBettingModal(true);
+            modalOpened = true;
+          }
+        }
+      }
+    }
   });
 
   return () => unsubscribe();
-}, [currentUser, allPlayers]);
+}, [currentUser]);
 
 
-  // Charger tous les joueurs
+  
+
   useEffect(() => {
     if (!currentUser) return;
-
-    console.log('🔄 Chargement des joueurs...');
     
     const usersRef = ref(database, 'users');
     const unsubscribe = onValue(usersRef, (snapshot) => {
       const data = snapshot.val();
-      console.log('📊 Données Firebase brutes:', data);
       
       if (data) {
         const playersList = Object.entries(data)
@@ -618,32 +565,21 @@ useEffect(() => {
           }))
           .filter(player => player.pseudo !== 'Admin'); 
         
-        console.log('👥 TOUS les joueurs chargés:', playersList.length);
-        console.log('🟢 Joueurs en ligne:', playersList.filter(p => p.online).length);
-        
         setAllPlayers(playersList);
       } else {
-        console.log('⚠️ Aucune donnée utilisateur trouvée');
         setAllPlayers([]);
       }
-    }, (error) => {
-      console.error('❌ Erreur chargement joueurs:', error);
     });
 
-    return () => {
-      console.log('🛑 Nettoyage listener joueurs');
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [currentUser]);
 
-  // Charger la liste d'amis
   useEffect(() => {
     if (!currentUser) return;
 
     const friendsRef = ref(database, `users/${currentUser.uid}/friends`);
     const unsubscribe = onValue(friendsRef, (snapshot) => {
       const data = snapshot.val();
-      console.log('👫 Amis Firebase:', data);
       
       if (data) {
         setFriends(Object.values(data));
@@ -655,7 +591,6 @@ useEffect(() => {
     return () => unsubscribe();
   }, [currentUser]);
 
-  // 🆕 Écouter les demandes d'ami reçues
   useEffect(() => {
     if (!currentUser) return;
 
@@ -672,7 +607,7 @@ useEffect(() => {
     return friends.some(f => f.uid === uid);
   };
 
-    const filteredPlayers = allPlayers
+  const filteredPlayers = allPlayers
     .filter(player => player.uid !== currentUser.uid)
     .filter(player => 
       player.pseudo?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -687,7 +622,6 @@ useEffect(() => {
   const onlineFriends = friendsList.filter(f => f.online);
   const offlineFriends = friendsList.filter(f => !f.online);
 
-  // 🆕 Fonction pour envoyer une demande d'ami
   const sendFriendRequest = async (toUid, toPseudo) => {
     if (!currentUser || !userData) return;
 
@@ -714,14 +648,11 @@ useEffect(() => {
     try {
       const friendRef = ref(database, `users/${currentUser.uid}/friends/${friendUid}`);
       await remove(friendRef);
-      console.log('✅ Ami retiré');
     } catch (error) {
       console.error('❌ Erreur suppression ami:', error);
     }
   };
 
-
-//sproposer un jeu
   const proposeGame = async (opponentUid, opponentPseudo) => {
     if (!currentUser || !userData) return;
 
@@ -742,29 +673,22 @@ useEffect(() => {
     }
   };
 
-
-  
   const handleLogout = async () => {
     await logout();
     onBack();
   };
 
-
-  // 🆕 AJOUTEZ CES DEUX FONCTIONS ICI (ligne 313)
   const handleGameAccept = (opponent) => {
-    console.log('🎮 Ouverture modal de mise pour:', opponent);
     setGameOpponent(opponent);
     setShowBettingModal(true);
   };
 
   const handleStartMultiplayerGame = (gameData) => {
-    console.log('🎮 Démarrage du jeu multijoueur:', gameData);
     alert(`Jeu prêt à commencer!\nMise: ${gameData.bet} jetons\nVs: ${gameData.player2Pseudo}`);
     setShowBettingModal(false);
     setGameOpponent(null);
+     
   };
-
-  
 
   return (
     <div className="min-h-screen bg-cover bg-center p-3" style={{backgroundImage: 'url(/gran_lakou.jpg)'}}>
@@ -776,7 +700,6 @@ useEffect(() => {
           </button>
 
           <div className="flex items-center gap-2">
-            {/* 🆕 Bouton notification demandes d'ami */}
             <button
               onClick={() => setShowFriendRequests(true)}
               className="relative p-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors shadow-lg"
@@ -938,7 +861,6 @@ useEffect(() => {
                 className="w-full pl-8 pr-8 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
               />
 
-
               {searchQuery && (
                 <button 
                   onClick={() => setSearchQuery('')}
@@ -949,9 +871,6 @@ useEffect(() => {
               )}
             </div>
           </div>
-
-
-          
 
           <div className="p-2 max-h-[calc(100vh-280px)] overflow-y-auto">
             {activeTab === 'online' && (
@@ -1140,10 +1059,6 @@ useEffect(() => {
         </div>
       </div>
 
-
-
-
-
       {showRechargeModal && (
         <TokenRechargeModal 
           onClose={() => setShowRechargeModal(false)} 
@@ -1159,9 +1074,6 @@ useEffect(() => {
         />
       )}
 
-      
-
-      
       {showBettingModal && gameOpponent && (
         <BettingModal
           currentUser={currentUser}
@@ -1171,56 +1083,15 @@ useEffect(() => {
             setShowBettingModal(false);
             setGameOpponent(null);
           }}
-          onStartGame={(gameData) => {
-            console.log('🎮 Démarrage du jeu:', gameData);
-            // TODO: Implémenter le démarrage du jeu
-            setShowBettingModal(false);
-            setGameOpponent(null);
-          }}
+          onStartGame={handleStartMultiplayerGame}
         />
       )}
 
-      {showRechargeModal && (
-        <TokenRechargeModal 
-          onClose={() => setShowRechargeModal(false)} 
-          currentTokens={userData?.tokens || playerTokens}
-        />
-      )}
-
-      {showFriendRequests && (
-        <FriendRequestsModal 
-          currentUser={currentUser}
-          userData={userData}
-          onClose={() => setShowFriendRequests(false)}
-        />
-      )}
-
-{/* BettingModal */}
-{showBettingModal && gameOpponent && (
-  <BettingModal
-    currentUser={currentUser}
-    userData={userData}
-    opponent={gameOpponent}
-    onClose={() => {
-      setShowBettingModal(false);
-      setGameOpponent(null);
-    }}
-    onStartGame={handleStartMultiplayerGame}
-  />
-)}
-
-
-{/* GameRequest Component */}
-<GameRequest
-  currentUser={currentUser}
-  userData={userData}
-  onAccept={handleGameAccept}
-/>
-
-
-
-
-
+      <GameRequest
+        currentUser={currentUser}
+        userData={userData}
+        onAccept={handleGameAccept}
+      />
     </div>
   );
 };
