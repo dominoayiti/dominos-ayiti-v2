@@ -51,31 +51,46 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
   }, [currentUser]);
 
 
-  //accepter la demande de jeu
- const acceptRequest = async (request) => {
+
+// ✅ REMPLACER cette fonction dans GameRequest.jsx (ligne ~57)
+
+const acceptRequest = async (request) => {
   try {
     console.log('✅ Acceptation demande:', request);
+    console.log('   Je suis (Joueur 2):', currentUser.uid);
+    console.log('   Adversaire (Joueur 1):', request.from);
     
-    // ✅ ÉTAPE 1: Marquer comme accepté dans la demande ORIGINALE
-    await update(ref(database, `gameRequests/${currentUser.uid}/${request.from}`), {
+    // ✅ ÉTAPE 1: Marquer comme accepté dans MA demande
+    const myRequestPath = `gameRequests/${currentUser.uid}/${request.from}`;
+    console.log('📝 Mise à jour:', myRequestPath);
+    
+    await update(ref(database, myRequestPath), {
       status: 'accepted',
       acceptedAt: Date.now(),
       acceptedBy: currentUser.uid
     });
     
-    console.log('✅ Status mis à jour');
+    console.log('✅ Status mis à jour dans ma demande');
     
-    // ✅ ÉTAPE 2: Notifier l'expéditeur
-    await set(ref(database, `notifications/${request.from}/${Date.now()}`), {
-      type: 'game_accepted',
+    // ✅ ÉTAPE 2: Envoyer NOTIFICATION SPÉCIALE au Joueur 1
+    // ⚠️ IMPORTANT: Utilisez 'game_accepted_trigger' comme type
+    const notificationData = {
+      type: 'game_accepted_trigger',  // ← Type spécial pour déclencher le modal
       from: currentUser.uid,
       fromPseudo: userData?.pseudo || 'User',
+      fromTokens: userData?.tokens || 0,
       message: `${userData?.pseudo || 'User'} aksepte jwèt la!`,
       timestamp: Date.now(),
-      read: false
-    });
+      read: false,
+      triggerBettingModal: true  // ← FLAG pour le modal
+    };
     
-    console.log('✅ Notification envoyée');
+    console.log('📝 Envoi notification trigger à:', request.from);
+    console.log('   Notification data:', notificationData);
+    
+    await set(ref(database, `notifications/${request.from}/${Date.now()}`), notificationData);
+    
+    console.log('✅ Notification trigger envoyée');
     
     // Toast de confirmation
     const toastDiv = document.createElement('div');
@@ -89,13 +104,14 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
     document.body.appendChild(toastDiv);
     setTimeout(() => toastDiv.remove(), 3000);
     
-    // ✅ Ouvrir le modal de mise
+    // ✅ ÉTAPE 3: Ouvrir le modal de mise POUR MOI (Joueur 2)
     if (onAccept) {
       const opponent = {
         uid: request.from,
         pseudo: request.fromPseudo,
         tokens: request.tokens || 0
       };
+      console.log('🎮 Ouverture modal pour moi (Joueur 2)');
       onAccept(opponent);
     }
     
@@ -103,7 +119,7 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
     console.error('❌ Erreur acceptation jeu:', error);
     alert('Erè! Pa ka aksepte jwèt la.');
   }
-};   
+}; 
 
   //rejecter la demande
   const rejectRequest = async (request) => {
@@ -147,7 +163,7 @@ const GameRequest = ({ currentUser, userData, onAccept }) => {
   console.log('🎮 GameRequest: Affichage popup pour', pendingRequests.length, 'demande(s)');
 
   return (
-    <>
+    <> 
       {pendingRequests.map((request) => (
         <div 
           key={request.id}

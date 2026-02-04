@@ -1,5 +1,5 @@
-// server.js - Backend Node.js pour gérer les paiements MonCash
-// VERSION PRODUCTION avec mode LIVE MonCash - CORRIGÉE
+// server.js - Backend Node.js pour gérer les paiements MonCash et les jeux
+// VERSION PRODUCTION avec mode LIVE MonCash + Routes de jeu sécurisées
 
 require('dotenv').config();
 
@@ -417,7 +417,21 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
       const currentTokens = userSnap.val()?.tokens || 0;
       const newBalance = currentTokens + payment.tokens;
 
-      await userRef.update({ tokens: newBalance });
+      await userRef.update({ 
+        tokens: newBalance,
+        lastRecharge: Date.now()
+      });
+
+      // Créer une transaction
+      await db.ref(`transactions/${payment.userId}/${orderId}`).set({
+        orderId: orderId,
+        transactionId: transactionId,
+        amount: payment.amount,
+        tokens: payment.tokens,
+        status: 'completed',
+        timestamp: Date.now(),
+        method: 'moncash'
+      });
 
       // Déplacer vers completedPayments
       await db.ref(`completedPayments/${orderId}`).set({
@@ -465,6 +479,330 @@ app.post('/api/moncash/verify-payment', async (req, res) => {
 });
 
 // ============================================
+// 🎮 ROUTE 4 : DÉDUIRE LES TOKENS LORS D'UN PARI
+// ============================================
+app.post('/api/game/deduct-bet', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    console.log('📥 [DEDUCT-BET] Requête:', {
+      player1: req.body.player1Uid?.substring(0, 8) + '...',
+      player2: req.body.player2Uid?.substring(0, 8) + '...',
+      bet: req.body.betAmount,
+      gameId: req.body.gameId
+    });
+
+    const { player1Uid, player2Uid, betAmount, gameId, player1Pseudo, player2Pseudo } = req.body;
+
+    // Validation
+    if (!player1Uid || !player2Uid || !betAmount || !gameId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Paramètres manquants'
+      });
+    }
+
+    const bet = parseInt(betAmount, 10);
+    if (isNaN(bet) || bet <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Montant de pari invalide'
+      });
+    }
+
+    if (!db) {
+      throw new Error('Firebase non initialisé');
+    }
+
+    // Récupérer les tokens des deux joueurs
+    const player1Snapshot = await db.ref(`users/${player1Uid}/tokens`).once('value');
+    const player2Snapshot = await db.ref(`users/${player2Uid}/tokens`).once('value');
+
+    const player1Tokens = player1Snapshot.val() || 0;
+    const player2Tokens = player2Snapshot.val() || 0;
+
+    console.log('💰 [DEDUCT-BET] Tokens actuels:', {
+      player1: player1Tokens,
+      player2: player2Tokens,
+      required: bet
+    });
+
+    // Vérifier les fonds
+    if (player1Tokens < bet) {
+      console.warn('⚠️  [DEDUCT-BET] Joueur 1 fonds insuffisants');
+      return res.json({
+        success: false,
+        error: 'insufficient_funds_player1',
+        message: `${player1Pseudo || 'Joueur 1'} n'a pas assez de jetons`
+      });
+    }
+
+    if (player2Tokens < bet) {
+      console.warn('⚠️  [DEDUCT-BET] Joueur 2 fonds insuffisants');
+      return res.json({
+        success: false,
+        error: 'insufficient_funds_player2',
+        message: `${player2Pseudo || 'Joueur 2'} n'a pas assez de jetons`
+      });
+    }
+
+    // ✅ Transaction atomique pour déduire les tokens
+    await db.ref().update({
+      [`users/${player1Uid}/tokens`]: player1Tokens - bet,
+      [`users/${player2Uid}/tokens`]: player2Tokens - bet,
+      [`games/${gameId}/player1Uid`]: player1Uid,
+      [`games/${gameId}/player1Pseudo`]: player1Pseudo || 'Joueur 1',
+      [`games/${gameId}/player2Uid`]: player2Uid,
+      [`games/${gameId}/player2Pseudo`]: player2Pseudo || 'Joueur 2',
+      [`games/${gameId}/betAmount`]: bet,
+      [`games/${gameId}/escrow`]: bet * 2,
+      [`games/${gameId}/status`]: 'in_progress',
+      [`games/${gameId}/startedAt`]: Date.now()
+    });
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [DEDUCT-BET] Succès en ${duration}ms. Escrow: ${bet * 2} jetons`);
+
+    res.json({
+      success: true,
+      escrow: bet * 2,
+      player1NewBalance: player1Tokens - bet,
+      player2NewBalance: player2Tokens - bet,
+      duration: `${duration}ms`
+    });
+
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [DEDUCT-BET] Erreur après ${duration}ms:`, error.message);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      duration: `${duration}ms`
+    });
+  }
+});
+
+// ============================================
+// 🏆 ROUTE 5 : DISTRIBUER LES GAINS AU GAGNANT
+// ============================================
+app.post('/api/game/award-winner', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    console.log('📥 [AWARD-WINNER] Requête:', {
+      gameId: req.body.gameId,
+      winner: req.body.winnerUid?.substring(0, 8) + '...',
+      loser: req.body.loserUid?.substring(0, 8) + '...'
+    });
+
+    const { gameId, winnerUid, loserUid } = req.body;
+
+    // Validation
+    if (!gameId || !winnerUid || !loserUid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Paramètres manquants (gameId, winnerUid, loserUid)'
+      });
+    }
+
+    if (!db) {
+      throw new Error('Firebase non initialisé');
+    }
+
+    // Récupérer les infos du jeu
+    const gameSnapshot = await db.ref(`games/${gameId}`).once('value');
+    
+    if (!gameSnapshot.exists()) {
+      console.warn('⚠️  [AWARD-WINNER] Jeu introuvable:', gameId);
+      return res.status(404).json({
+        success: false,
+        error: 'Jeu introuvable'
+      });
+    }
+
+    const game = gameSnapshot.val();
+
+    // Vérifier le statut
+    if (game.status !== 'in_progress') {
+      console.warn('⚠️  [AWARD-WINNER] Jeu déjà terminé ou invalide');
+      return res.json({
+        success: false,
+        error: 'game_already_completed',
+        message: 'Ce jeu est déjà terminé'
+      });
+    }
+
+    // Vérifier que les UIDs correspondent aux joueurs
+    if (![game.player1Uid, game.player2Uid].includes(winnerUid)) {
+      console.error('❌ [AWARD-WINNER] Gagnant invalide');
+      return res.status(400).json({
+        success: false,
+        error: 'invalid_winner',
+        message: 'Le gagnant ne fait pas partie de ce jeu'
+      });
+    }
+
+    if (![game.player1Uid, game.player2Uid].includes(loserUid)) {
+      console.error('❌ [AWARD-WINNER] Perdant invalide');
+      return res.status(400).json({
+        success: false,
+        error: 'invalid_loser',
+        message: 'Le perdant ne fait pas partie de ce jeu'
+      });
+    }
+
+    const escrow = game.escrow || 0;
+    console.log('💰 [AWARD-WINNER] Escrow à distribuer:', escrow);
+
+    // Récupérer les tokens actuels du gagnant
+    const winnerSnapshot = await db.ref(`users/${winnerUid}/tokens`).once('value');
+    const currentTokens = winnerSnapshot.val() || 0;
+    const newBalance = currentTokens + escrow;
+
+    // ✅ Mettre à jour de manière atomique
+    await db.ref().update({
+      // Ajouter les gains au gagnant
+      [`users/${winnerUid}/tokens`]: newBalance,
+      
+      // Mettre à jour les statistiques
+      [`users/${winnerUid}/stats/won`]: admin.database.ServerValue.increment(1),
+      [`users/${winnerUid}/stats/played`]: admin.database.ServerValue.increment(1),
+      [`users/${loserUid}/stats/lost`]: admin.database.ServerValue.increment(1),
+      [`users/${loserUid}/stats/played`]: admin.database.ServerValue.increment(1),
+      
+      // Marquer le jeu comme terminé
+      [`games/${gameId}/status`]: 'completed',
+      [`games/${gameId}/winner`]: winnerUid,
+      [`games/${gameId}/loser`]: loserUid,
+      [`games/${gameId}/completedAt`]: Date.now()
+    });
+
+    // ✅ Envoyer des notifications aux joueurs
+    await db.ref(`notifications/${winnerUid}/${Date.now()}`).set({
+      type: 'game_won',
+      message: `Félisitasyon! Ou genyen ${escrow} jetons!`,
+      gameId: gameId,
+      tokensWon: escrow,
+      timestamp: Date.now(),
+      read: false
+    });
+
+    await db.ref(`notifications/${loserUid}/${Date.now()}`).set({
+      type: 'game_lost',
+      message: `Ou pèdi jwèt la. Eseye ankò!`,
+      gameId: gameId,
+      tokensLost: game.betAmount || 0,
+      timestamp: Date.now(),
+      read: false
+    });
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [AWARD-WINNER] Succès en ${duration}ms. Jetons distribués: ${escrow}`);
+
+    res.json({
+      success: true,
+      tokensAwarded: escrow,
+      winnerNewBalance: newBalance,
+      duration: `${duration}ms`
+    });
+
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [AWARD-WINNER] Erreur après ${duration}ms:`, error.message);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      duration: `${duration}ms`
+    });
+  }
+});
+
+// ============================================
+// ❌ ROUTE 6 : ANNULER UN JEU (REMBOURSEMENT)
+// ============================================
+app.post('/api/game/cancel-game', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    console.log('📥 [CANCEL-GAME] Requête:', req.body);
+
+    const { gameId, reason } = req.body;
+
+    if (!gameId) {
+      return res.status(400).json({
+        success: false,
+        error: 'gameId manquant'
+      });
+    }
+
+    if (!db) {
+      throw new Error('Firebase non initialisé');
+    }
+
+    // Récupérer le jeu
+    const gameSnapshot = await db.ref(`games/${gameId}`).once('value');
+    
+    if (!gameSnapshot.exists()) {
+      return res.status(404).json({
+        success: false,
+        error: 'Jeu introuvable'
+      });
+    }
+
+    const game = gameSnapshot.val();
+
+    if (game.status !== 'in_progress') {
+      return res.json({
+        success: false,
+        error: 'game_not_in_progress',
+        message: 'Ce jeu ne peut pas être annulé'
+      });
+    }
+
+    const betAmount = game.betAmount || 0;
+
+    // Rembourser les deux joueurs
+    const player1Snapshot = await db.ref(`users/${game.player1Uid}/tokens`).once('value');
+    const player2Snapshot = await db.ref(`users/${game.player2Uid}/tokens`).once('value');
+
+    const player1Tokens = player1Snapshot.val() || 0;
+    const player2Tokens = player2Snapshot.val() || 0;
+
+    await db.ref().update({
+      // Rembourser les joueurs
+      [`users/${game.player1Uid}/tokens`]: player1Tokens + betAmount,
+      [`users/${game.player2Uid}/tokens`]: player2Tokens + betAmount,
+      
+      // Marquer comme annulé
+      [`games/${gameId}/status`]: 'cancelled',
+      [`games/${gameId}/cancelledAt`]: Date.now(),
+      [`games/${gameId}/cancelReason`]: reason || 'Unknown'
+    });
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [CANCEL-GAME] Jeu annulé en ${duration}ms. Remboursement: ${betAmount} x 2`);
+
+    res.json({
+      success: true,
+      refunded: betAmount * 2,
+      duration: `${duration}ms`
+    });
+
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [CANCEL-GAME] Erreur après ${duration}ms:`, error.message);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      duration: `${duration}ms`
+    });
+  }
+});
+
+// ============================================
 // ROUTE SANTÉ
 // ============================================
 app.get('/api/health', (req, res) => {
@@ -492,13 +830,16 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({ 
     message: 'Backend MonCash Domino Ayiti 🚀',
-    version: '2.2-FIXED',
+    version: '3.0-COMPLETE',
     mode: MONCASH_CONFIG.mode,
     timestamp: new Date().toISOString(),
     endpoints: [
       'POST /api/moncash/create-payment',
       'GET /api/moncash/callback',
       'POST /api/moncash/verify-payment',
+      'POST /api/game/deduct-bet',
+      'POST /api/game/award-winner',
+      'POST /api/game/cancel-game',
       'GET /api/health'
     ]
   });
@@ -518,79 +859,6 @@ app.use((req, res) => {
 // ============================================
 // FONCTIONS UTILITAIRES
 // ============================================
-function generateSuccessPage() {
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Paiement reçu</title>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 20px;
-        }
-        .container {
-          background: white;
-          padding: 40px;
-          border-radius: 16px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-          max-width: 500px;
-          width: 100%;
-          text-align: center;
-        }
-        h1 { 
-          color: #27ae60; 
-          font-size: 32px;
-          margin-bottom: 16px;
-        }
-        p { 
-          color: #555;
-          font-size: 18px; 
-          margin: 12px 0; 
-        }
-        .spinner {
-          border: 4px solid #f3f3f3;
-          border-top: 4px solid #27ae60;
-          border-radius: 50%;
-          width: 50px;
-          height: 50px;
-          animation: spin 1s linear infinite;
-          margin: 24px auto;
-        }
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        .icon { font-size: 64px; margin-bottom: 20px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="icon">✅</div>
-        <h1>Paiement reçu!</h1>
-        <p>Votre paiement a été reçu avec succès.</p>
-        <div class="spinner"></div>
-        <p style="font-size: 16px; color: #888;">Retour à l'application dans 3 secondes...</p>
-      </div>
-      <script>
-        setTimeout(() => {
-          window.location.href = 'https://glittery-buttercream-2cf125.netlify.app';
-        }, 3000);
-      </script>
-    </body>
-    </html>
-  `;
-}
-
-// ✅ NOUVELLE FONCTION : Page avec auto-vérification
 function generateSuccessPageWithVerification(orderId) {
   return `
     <!DOCTYPE html>
@@ -788,7 +1056,7 @@ function generateErrorPage(message) {
 // ============================================
 app.listen(PORT, () => {
   console.log('='.repeat(60));
-  console.log(`🚀 Backend MonCash Domino Ayiti - FIXED`);
+  console.log(`🚀 Backend MonCash Domino Ayiti - COMPLETE v3.0`);
   console.log(`📡 Port: ${PORT}`);
   console.log(`🔗 URL: ${process.env.BACKEND_URL || `http://localhost:${PORT}`}`);
   console.log(`🌍 Mode: ${MONCASH_CONFIG.mode.toUpperCase()}`);
@@ -799,6 +1067,10 @@ app.listen(PORT, () => {
   console.log(`   - getToken: 30s`);
   console.log(`   - createPayment: 45s`);
   console.log(`   - verifyPayment: 30s`);
+  console.log(`🎮 Routes de jeu:`);
+  console.log(`   - POST /api/game/deduct-bet`);
+  console.log(`   - POST /api/game/award-winner`);
+  console.log(`   - POST /api/game/cancel-game`);
   
   if (MONCASH_CONFIG.mode === 'live') {
     console.log('🚨 ========================================');
