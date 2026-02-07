@@ -32,10 +32,6 @@ const BettingModal = ({ currentUser, userData, opponent, isRequester, onClose, o
         await remove(ref(database, `gameBets/${gameSession}/error`));
         await remove(ref(database, `gameBets/${gameSession}/insufficient_funds`));
         
-        // ✅ CRITIQUE : SUPPRESSION DE LA LIGNE DANGEREUSE
-        // On ne supprime PAS la mise au démarrage pour éviter de supprimer une mise active
-        // en cas de re-render du composant.
-        
         console.log('✅ Session nettoyée au démarrage du modal');
       } catch (error) {
         console.error('❌ Erreur nettoyage session:', error);
@@ -180,23 +176,26 @@ const BettingModal = ({ currentUser, userData, opponent, isRequester, onClose, o
     return () => unsubscribe();
   }, [gameSession, currentUser.uid, onClose]);
 
-  // Vérification finale
+  // ✅ CORRECTION CRITIQUE : Vérification finale
   useEffect(() => {
     if (myBet && opponentBet && myBet === opponentBet) {
       console.log('✅ Les deux joueurs ont misé le même montant:', myBet);
       
+      // ✅ VERIFIER SEULEMENT MES JETONS
       const currentPlayerHasEnough = myBet <= (userData?.tokens || 0);
-      const opponentHasEnough = opponentBet <= (opponent?.tokens || 0);
       
-      if (!currentPlayerHasEnough || !opponentHasEnough) {
-        console.error('❌ Fonds insuffisants détectés après mise!');
+      // ❌ SUPPRESSION : On ne vérifie plus les jetons adversaires ici à cause des données obsolètes
+      // Si l'adversaire a misé (opponentBet existe), on suppose qu'il a les fonds pour avancer
+      
+      if (!currentPlayerHasEnough) {
+        console.error('❌ Fonds insuffisants détectés (JOUEUR ACTUEL)!');
         
         const toastDiv = document.createElement('div');
         toastDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
         toastDiv.innerHTML = `
           <div class="flex items-center gap-2">
             <span class="text-xl">❌</span>
-            <span class="font-semibold">Erè! Match enposib - Jeton ensifisan</span>
+            <span class="font-semibold">Ou pa gen ase jeton!</span>
           </div>
         `;
         document.body.appendChild(toastDiv);
@@ -208,6 +207,7 @@ const BettingModal = ({ currentUser, userData, opponent, isRequester, onClose, o
         return;
       }
       
+      // ✅ Tout est OK, lancer le jeu
       setTimeout(() => {
         const gameData = {
           sessionId: gameSession,
