@@ -266,7 +266,7 @@ const TokenRechargeModal = ({ onClose, currentTokens }) => {
     </div>
   );
 };
-// acceptation de demandes d'ami(e)s
+
 const FriendRequestsModal = ({ currentUser, userData, onClose }) => {
   const [requests, setRequests] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -455,146 +455,106 @@ const MultiplayerMenu = ({ onBack, playerTokens }) => {
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [showFriendRequests, setShowFriendRequests] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
-  const [showBettingModal, setShowBettingModal] = useState(false);
+  const [showBettingModal, setShowBettingModal] = useState(false);  
   const [gameOpponent, setGameOpponent] = useState(null);
   const [activeGame, setActiveGame] = useState(null);
+  const [isRequester, setIsRequester] = useState(false); 
 
 
-
-
-// ✅ VERSION ULTRA-DEBUGGÉE du useEffect pour MultiplayerMenu.jsx
-// Remplacer le useEffect actuel (ligne ~180)
-
-useEffect(() => {  
-  if (!currentUser) {
-    console.log('❌ useEffect acceptations: PAS D\'UTILISATEUR');
-    return;
-  }
-
-  console.log('🎯 DÉMARRAGE écoute acceptations pour:', currentUser.uid);
-
-  const myRequestsRef = ref(database, 'gameRequests');
-  
-  const unsubscribe = onValue(myRequestsRef, async (snapshot) => {
-    const data = snapshot.val();
-    
-    console.log('🔔 ÉVÉNEMENT FIREBASE gameRequests détecté pour:', currentUser.uid);
-    console.log('📊 Données complètes gameRequests:', JSON.stringify(data, null, 2));
-    
-    if (!data) {
-      console.log('⚠️ Aucune donnée gameRequests');
+    // ✅ VERSION ULTRA-DEBUGGÉE du useEffect pour MultiplayerMenu.jsx
+  useEffect(() => {  
+    if (!currentUser) {
+      console.log('❌ useEffect acceptations: PAS D\'UTILISATEUR');
       return;
     }
+
+    console.log('🎯 DÉMARRAGE écoute acceptations pour:', currentUser.uid);
+
+    const myRequestsRef = ref(database, 'gameRequests');
     
-    let modalOpened = false;
-    
-    // ✅ Parcourir TOUTES les demandes
-    for (const [recipientUid, senderRequests] of Object.entries(data)) {
-      console.log(`🔍 Analyse recipientUid: ${recipientUid}`);
+    const unsubscribe = onValue(myRequestsRef, async (snapshot) => {
+      const data = snapshot.val();
       
-      if (!senderRequests) {
-        console.log(`  ⏭️ Skip: senderRequests vide`);
-        continue;
-      }
+      if (!data) return;
       
-      for (const [senderUid, request] of Object.entries(senderRequests)) {
-        console.log(`  📝 Analyse request de ${senderUid}:`, request);
+      let modalOpened = false;
+      
+      // ✅ Parcourir TOUTES les demandes
+      for (const [recipientUid, senderRequests] of Object.entries(data)) {
+        if (!senderRequests) continue;
         
-        if (request.status !== 'accepted') {
-          console.log(`    ⏭️ Skip: status = ${request.status}`);
-          continue;
-        }
-        
-        if (modalOpened) {
-          console.log(`    ⏭️ Skip: modal déjà ouvert`);
-          continue;
-        }
-        
-        // ✅ CAS 1: J'ai ENVOYÉ la demande et elle a été acceptée
-        // Structure: gameRequests/destinataire_uid/mon_uid
-        if (senderUid === currentUser.uid && recipientUid !== currentUser.uid && request.from === currentUser.uid) {
-          console.log('🎉 CAS 1 DÉTECTÉ: MA demande acceptée par:', recipientUid);
-          console.log('   Request data:', request);
+        for (const [senderUid, request] of Object.entries(senderRequests)) {
+          if (request.status !== 'accepted') continue;
+          if (modalOpened) continue;
           
-          try {
-            const opponentRef = ref(database, `users/${recipientUid}`);
-            const opponentSnapshot = await get(opponentRef);
-            const opponentData = opponentSnapshot.val();
+          // ✅ CAS 1: J'ai ENVOYÉ la demande (Marco)
+          if (senderUid === currentUser.uid && recipientUid !== currentUser.uid && request.from === currentUser.uid) {
             
-            console.log('   Données adversaire récupérées:', opponentData);
-            
-            if (opponentData) {
-              const opponent = {
-                uid: recipientUid,
-                pseudo: opponentData.pseudo || 'Sans nom',
-                tokens: opponentData.tokens || 0
-              };
-              
-              console.log('✅ OUVERTURE MODAL BETTING pour CAS 1:', opponent);
-              setGameOpponent(opponent);
-              setShowBettingModal(true);
-              modalOpened = true;
-            } else {
-              console.error('❌ Données adversaire introuvables pour:', recipientUid);
+            // ✅ SÉCURITÉ : Si l'adversaire est déjà chargé, on ne fait rien (évite le bug de loop)
+            if (gameOpponent && gameOpponent.uid === recipientUid) {
+              continue;
             }
-          } catch (error) {
-            console.error('❌ Erreur récupération adversaire CAS 1:', error);
+
+            try {
+              const opponentRef = ref(database, `users/${recipientUid}`);
+              const opponentSnapshot = await get(opponentRef);
+              const opponentData = opponentSnapshot.val();
+              
+              if (opponentData) {
+                const opponent = {
+                  uid: recipientUid,
+                  pseudo: opponentData.pseudo || 'Sans nom',
+                  tokens: opponentData.tokens || 0
+                };
+                
+                setIsRequester(true); 
+                setGameOpponent(opponent);
+                setShowBettingModal(true);
+                modalOpened = true;
+              }
+            } catch (error) {
+              console.error('❌ Erreur récupération adversaire CAS 1:', error);
+            }
+          }
+          
+          // ✅ CAS 2: J'ai REÇU la demande (Haytifx)
+          else if (recipientUid === currentUser.uid && senderUid !== currentUser.uid && request.to === currentUser.uid) {
+            
+            // ✅ SÉCURITÉ : Si l'adversaire est déjà chargé, on ne fait rien
+            if (gameOpponent && gameOpponent.uid === senderUid) {
+              continue;
+            }
+
+            try {
+              const opponentRef = ref(database, `users/${senderUid}`);
+              const opponentSnapshot = await get(opponentRef);
+              const opponentData = opponentSnapshot.val();
+              
+              if (opponentData) {
+                const opponent = {
+                  uid: senderUid,
+                  pseudo: opponentData.pseudo || 'Sans nom',
+                  tokens: opponentData.tokens || 0
+                };
+                
+                setIsRequester(false);
+                setGameOpponent(opponent);
+                setShowBettingModal(true);
+                modalOpened = true;
+              }
+            } catch (error) {
+              console.error('❌ Erreur récupération adversaire CAS 2:', error);
+            }
           }
         }
-        
-        // ✅ CAS 2: J'ai REÇU la demande et je l'ai acceptée
-        // Structure: gameRequests/mon_uid/expediteur_uid  
-        else if (recipientUid === currentUser.uid && senderUid !== currentUser.uid && request.to === currentUser.uid) {
-          console.log('🎉 CAS 2 DÉTECTÉ: J\'ai accepté la demande de:', senderUid);
-          console.log('   Request data:', request);
-          
-          try {
-            const opponentRef = ref(database, `users/${senderUid}`);
-            const opponentSnapshot = await get(opponentRef);
-            const opponentData = opponentSnapshot.val();
-            
-            console.log('   Données adversaire récupérées:', opponentData);
-            
-            if (opponentData) {
-              const opponent = {
-                uid: senderUid,
-                pseudo: opponentData.pseudo || 'Sans nom',
-                tokens: opponentData.tokens || 0
-              };
-              
-              console.log('✅ OUVERTURE MODAL BETTING pour CAS 2:', opponent);
-              setGameOpponent(opponent);
-              setShowBettingModal(true);
-              modalOpened = true;
-            } else {
-              console.error('❌ Données adversaire introuvables pour:', senderUid);
-            }
-          } catch (error) {
-            console.error('❌ Erreur récupération adversaire CAS 2:', error);
-          }
-        } else {
-          console.log(`    ⏭️ Skip: Conditions CAS 1/2 non remplies`);
-          console.log(`       senderUid=${senderUid}, currentUser=${currentUser.uid}`);
-          console.log(`       recipientUid=${recipientUid}, request.from=${request.from}, request.to=${request.to}`);
-        }
       }
-    }
-    
-    if (!modalOpened) {
-      console.log('⚠️ Aucun modal ouvert après analyse complète');
-    }
-  });
+    });
 
-  console.log('✅ Listener gameRequests activé pour:', currentUser.uid);
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser, gameOpponent]); // ✅ IMPORTANT : Ajouter gameOpponent ici
 
-  return () => {
-    console.log('🛑 Nettoyage listener gameRequests pour:', currentUser.uid);
-    unsubscribe();
-  };
-}, [currentUser]);
-
-
-  
 
   useEffect(() => {
     if (!currentUser) return;
@@ -654,76 +614,49 @@ useEffect(() => {
     return () => unsubscribe();
   }, [currentUser]);
 
-
-
 // ✅ NOUVEAU: Écouter les notifications pour détecter les acceptations
 useEffect(() => {
-  if (!currentUser) {
-    console.log('❌ Listener notifications: PAS D\'UTILISATEUR');
-    return;
-  }
-
-  console.log('🔔 Démarrage écoute notifications game_accepted pour:', currentUser.uid);
+  if (!currentUser) return;
 
   const notificationsRef = ref(database, `notifications/${currentUser.uid}`);
   
   const unsubscribe = onValue(notificationsRef, async (snapshot) => {
     const data = snapshot.val();
     
-    if (!data) {
-      console.log('   Aucune notification');
-      return;
-    }
+    if (!data) return;
     
-    console.log('📬 Notifications reçues, analyse...');
-    
-    // Chercher les notifications game_accepted_trigger non lues
     for (const [notifId, notification] of Object.entries(data)) {
-      console.log(`   Notif ${notifId}:`, notification.type, 'read:', notification.read);
-      
       if (
         notification.type === 'game_accepted_trigger' && 
         notification.triggerBettingModal === true &&
         !notification.read
       ) {
-        console.log('🎉 NOTIFICATION GAME_ACCEPTED DÉTECTÉE !');
-        console.log('   De:', notification.fromPseudo, '(', notification.from, ')');
-        
-        // ✅ Marquer comme lue IMMÉDIATEMENT pour éviter les doublons
         try {
           await update(ref(database, `notifications/${currentUser.uid}/${notifId}`), {
             read: true
           });
-          console.log('✅ Notification marquée comme lue');
         } catch (error) {
           console.error('❌ Erreur marquage notification:', error);
         }
         
-        // ✅ Récupérer les données COMPLÈTES de l'adversaire depuis Firebase
         try {
           const opponentRef = ref(database, `users/${notification.from}`);
           const opponentSnapshot = await get(opponentRef);
           const opponentData = opponentSnapshot.val();
           
-          console.log('👤 Données adversaire récupérées:', opponentData);
-          
           if (opponentData) {
             const opponent = {
               uid: notification.from,
               pseudo: notification.fromPseudo,
-              tokens: opponentData.tokens || 0  // ← Utiliser les jetons actuels de Firebase
+              tokens: opponentData.tokens || 0
             };
             
-            console.log('✅ OUVERTURE MODAL BETTING pour Joueur 1');
-            console.log('   Adversaire:', opponent);
+            // ✅ AJOUT CORRECTION ICI : Marco reçoit la notif, il est donc l'Hôte
+            setIsRequester(true); 
             
             setGameOpponent(opponent);
             setShowBettingModal(true);
-            
-            // Ne traiter qu'UNE SEULE notification
             break;
-          } else {
-            console.error('❌ Données adversaire introuvables');
           }
         } catch (error) {
           console.error('❌ Erreur récupération adversaire:', error);
@@ -732,26 +665,10 @@ useEffect(() => {
     }
   });
 
-  console.log('✅ Listener notifications activé');
-
   return () => {
-    console.log('🛑 Nettoyage listener notifications');
     unsubscribe();
   };
 }, [currentUser]);
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   const isFriend = (uid) => {
     return friends.some(f => f.uid === uid);
@@ -828,17 +745,19 @@ useEffect(() => {
     onBack();
   };
 
+  // ✅ MODIFIER la fonction handleGameAccept (Cas 2 : Haytifx est l'invité)
   const handleGameAccept = (opponent) => {
+    setIsRequester(false); // ✅ Haytifx a accepté, il n'est pas l'hôte
     setGameOpponent(opponent);
     setShowBettingModal(true);
-  };
+  }; // ✅ L'ERREUR ÉTAIT ICI : IL MANQUAIT L'ACCOLADE FERMANTE !
 
   const handleStartMultiplayerGame = (gameData) => {
-  console.log('🎮 Démarrage du jeu multijoueur:', gameData);
-  setShowBettingModal(false);
-  setGameOpponent(null);
-  setActiveGame(gameData);
-};
+    console.log('🎮 Démarrage du jeu multijoueur:', gameData);
+    setShowBettingModal(false);
+    setGameOpponent(null);
+    setActiveGame(gameData);
+  };
 
 // 🆕 AJOUTE CETTE FONCTION ICI
 const handleExitGame = () => {
@@ -856,8 +775,6 @@ if (activeGame) {
     />
   );
 }
-
-
 
   return (
     <div className="min-h-screen bg-cover bg-center p-3" style={{backgroundImage: 'url(/gran_lakou.jpg)'}}>
@@ -1173,7 +1090,7 @@ if (activeGame) {
                           <button
                             onClick={() => proposeGame(friend.uid, friend.pseudo)}
                             className="p-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                            title="Pwopoze yon pati"
+                            title="Pwopoze yon parti"
                           >
                             <Gamepad2 className="w-3.5 h-3.5" />
                           </button>
@@ -1248,9 +1165,11 @@ if (activeGame) {
           currentUser={currentUser}
           userData={userData}
           opponent={gameOpponent}
+          isRequester={isRequester}
           onClose={() => {
             setShowBettingModal(false);
             setGameOpponent(null);
+            setIsRequester(false); 
           }}
           onStartGame={handleStartMultiplayerGame}
         />

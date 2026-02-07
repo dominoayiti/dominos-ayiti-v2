@@ -3,14 +3,13 @@ import { Coins, X, Loader, AlertCircle } from 'lucide-react';
 import { database } from '../firebase-config';
 import { ref, set, onValue, remove } from 'firebase/database';
 
-  const BettingModal = ({ currentUser, userData, opponent, onClose, onStartGame }) => {
+const BettingModal = ({ currentUser, userData, opponent, isRequester, onClose, onStartGame }) => { 
   const [myBet, setMyBet] = useState(null);
   const [opponentBet, setOpponentBet] = useState(null);
   const [isWaiting, setIsWaiting] = useState(false);
   const [error, setError] = useState('');
   const [gameSession, setGameSession] = useState(null);
   const [isCancelled, setIsCancelled] = useState(false);
-  
 
   // Générer un ID de session UNIFIÉ pour les deux joueurs
   useEffect(() => {
@@ -20,12 +19,37 @@ import { ref, set, onValue, remove } from 'firebase/database';
     console.log('🎮 Session ID créé:', sessionId);
   }, [currentUser.uid, opponent.uid]);
 
+  // ✅ NETTOYAGE DE LA SESSION AU DÉMARRAGE
+  useEffect(() => {
+    const cleanupSession = async () => {
+      if (!gameSession) return;
+      
+      console.log('🧹 Nettoyage initial de la session:', gameSession);
+      
+      try {
+        // Nettoyer les flags d'erreur
+        await remove(ref(database, `gameBets/${gameSession}/cancelled`));
+        await remove(ref(database, `gameBets/${gameSession}/error`));
+        await remove(ref(database, `gameBets/${gameSession}/insufficient_funds`));
+        
+        // ✅ CRITIQUE : SUPPRESSION DE LA LIGNE DANGEREUSE
+        // On ne supprime PAS la mise au démarrage pour éviter de supprimer une mise active
+        // en cas de re-render du composant.
+        
+        console.log('✅ Session nettoyée au démarrage du modal');
+      } catch (error) {
+        console.error('❌ Erreur nettoyage session:', error);
+      }
+    };
+
+    cleanupSession();
+  }, [gameSession, currentUser.uid]);
+
   // ✅ CORRECTION: Déplacer handleCancel avant les useEffect qui l'utilisent
   const handleCancel = useCallback(async () => {
     if (isCancelled) return;
 
     try {
-      // Marquer comme annulé dans Firebase
       const cancelRef = ref(database, `gameBets/${gameSession}/cancelled`);
       await set(cancelRef, {
         by: currentUser.uid,
@@ -33,12 +57,10 @@ import { ref, set, onValue, remove } from 'firebase/database';
         timestamp: Date.now()
       });
 
-      // Supprimer les mises
       if (myBet) {
         await remove(ref(database, `gameBets/${gameSession}/${currentUser.uid}`));
       }
 
-      // Toast local
       const toastDiv = document.createElement('div');
       toastDiv.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
       toastDiv.innerHTML = `
@@ -50,7 +72,6 @@ import { ref, set, onValue, remove } from 'firebase/database';
       document.body.appendChild(toastDiv);
       setTimeout(() => toastDiv.remove(), 2000);
 
-      // Nettoyer Firebase après 3 secondes
       setTimeout(async () => {
         await remove(ref(database, `gameBets/${gameSession}`));
       }, 3000);
@@ -62,28 +83,37 @@ import { ref, set, onValue, remove } from 'firebase/database';
     onClose();
   }, [isCancelled, gameSession, currentUser.uid, userData.pseudo, myBet, onClose]);
 
-  // Écouter les mises de l'adversaire
+  // ✅ CORRECTION MAJEURE: Écouter toute la session
   useEffect(() => {
     if (!gameSession || !opponent) return;
 
-    console.log('👂 Écoute mise de:', opponent.pseudo, '- UID:', opponent.uid);
+    console.log('👂 Écoute mise pour session:', gameSession, 'Cible:', opponent.pseudo);
 
-    const betRef = ref(database, `gameBets/${gameSession}/${opponent.uid}`);
+    const betsRef = ref(database, `gameBets/${gameSession}`);
     
-    const unsubscribe = onValue(betRef, (snapshot) => {
+    const unsubscribe = onValue(betsRef, (snapshot) => {
       const data = snapshot.val();
       
       if (data) {
-        console.log('💰 Mise adversaire détectée:', data.amount);
-        setOpponentBet(data.amount);
+        const opponentBetData = data[opponent.uid];
+        
+        if (opponentBetData) {
+          console.log('💰 Mise adversaire détectée (méthode robuste):', opponentBetData.amount);
+          setOpponentBet(opponentBetData.amount);
+        } else {
+          console.log('⏳ Aucune mise adversaire (session trouvée mais mise vide)');
+          if (data[opponent.uid] === null && opponentBet !== null) {
+             setOpponentBet(null);
+          }
+        }
       } else {
-        console.log('⏳ Aucune mise adversaire pour le moment');
+        console.log('⏳ Session de mise vide');
         setOpponentBet(null);
       }
     });
 
     return () => unsubscribe();
-  }, [gameSession, opponent]);
+  }, [gameSession, opponent, opponentBet]);
 
   // Écouter les annulations
   useEffect(() => {
@@ -97,7 +127,6 @@ import { ref, set, onValue, remove } from 'firebase/database';
       if (data && data.by !== currentUser.uid) {
         console.log('❌ Match annulé par:', data.byPseudo);
         
-        // Toast d'annulation
         const toastDiv = document.createElement('div');
         toastDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
         toastDiv.innerHTML = `
@@ -119,7 +148,7 @@ import { ref, set, onValue, remove } from 'firebase/database';
     return () => unsubscribe();
   }, [gameSession, currentUser.uid, onClose]);
 
-  // ✅ NOUVEAU : Écouter les erreurs de fonds insuffisants
+  // Écouter les erreurs de fonds insuffisants
   useEffect(() => {
     if (!gameSession) return;
 
@@ -129,9 +158,6 @@ import { ref, set, onValue, remove } from 'firebase/database';
       const data = snapshot.val();
       
       if (data && data.targetUid === currentUser.uid) {
-        console.log('⚠️ L\'adversaire a tenté de miser plus que vos jetons disponibles');
-        
-        // Toast pour informer le joueur
         const toastDiv = document.createElement('div');
         toastDiv.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
         toastDiv.innerHTML = `
@@ -154,12 +180,11 @@ import { ref, set, onValue, remove } from 'firebase/database';
     return () => unsubscribe();
   }, [gameSession, currentUser.uid, onClose]);
 
-  // ✅ CORRIGÉ : Vérifier si les deux joueurs ont misé avec validation finale
+  // Vérification finale
   useEffect(() => {
     if (myBet && opponentBet && myBet === opponentBet) {
       console.log('✅ Les deux joueurs ont misé le même montant:', myBet);
       
-      // ✅ VÉRIFICATION FINALE : Les deux joueurs ont-ils assez de jetons ?
       const currentPlayerHasEnough = myBet <= (userData?.tokens || 0);
       const opponentHasEnough = opponentBet <= (opponent?.tokens || 0);
       
@@ -183,7 +208,6 @@ import { ref, set, onValue, remove } from 'firebase/database';
         return;
       }
       
-      // ✅ Tout est OK, lancer le jeu
       setTimeout(() => {
         const gameData = {
           sessionId: gameSession,
@@ -203,17 +227,28 @@ import { ref, set, onValue, remove } from 'firebase/database';
   const betOptions = [10, 50, 100, 500, 1000, 5000];
 
   const handlePlaceBet = async (amount) => {
-    // Vérifier si l'adversaire a déjà misé et que les montants correspondent
+    console.log('🔍 CLIC SUR MISE:', amount, 'Est-ce que je suis l\'hôte (Requester)?', isRequester);
+    console.log('🔍 Adversaire:', opponent.pseudo, 'UID:', opponent.uid);
+
+    // ✅ BLOQUER L'INVITÉ SI L'HÔTE N'A PAS ENCORE MISÉ
+    if (!isRequester && !opponentBet) {
+      setError(`Tan pou ${opponent.pseudo} chwazi mize la anvan!`);
+      const toastDiv = document.createElement('div');
+      toastDiv.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
+      toastDiv.innerHTML = `<p class="font-semibold">⏳ Tan pou ${opponent.pseudo} mize...</p>`;
+      document.body.appendChild(toastDiv);
+      setTimeout(() => toastDiv.remove(), 2000);
+      return;
+    }
+
     if (opponentBet && amount !== opponentBet) {
       setError(`Ou dwe mize ${opponentBet} jetons tankou advèsè ou!`);
       return;
     }
 
-    // ✅ VÉRIFICATION JOUEUR ACTUEL
     if (amount > (userData?.tokens || 0)) {
       setError('Ou pa gen ase jeton!');
       
-      // Notifier l'adversaire via Firebase
       const notifRef = ref(database, `gameBets/${gameSession}/error`);
       await set(notifRef, {
         by: currentUser.uid,
@@ -222,7 +257,6 @@ import { ref, set, onValue, remove } from 'firebase/database';
         timestamp: Date.now()
       });
 
-      // Toast local
       const toastDiv = document.createElement('div');
       toastDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
       toastDiv.innerHTML = `
@@ -236,43 +270,6 @@ import { ref, set, onValue, remove } from 'firebase/database';
         toastDiv.remove();
         handleCancel();
       }, 3000);
-      
-      return;
-    }
-
-    // ✅ NOUVELLE VÉRIFICATION : L'adversaire a-t-il assez de jetons ?
-    if (opponent && amount > (opponent.tokens || 0)) {
-      setError(`${opponent.pseudo} pa gen ase jeton pou mize ${amount}!`);
-      
-      // Notifier l'adversaire qu'il n'a pas assez de jetons
-      const notifRef = ref(database, `gameBets/${gameSession}/insufficient_funds`);
-      await set(notifRef, {
-        by: currentUser.uid,
-        byPseudo: userData.pseudo,
-        targetUid: opponent.uid,
-        targetPseudo: opponent.pseudo,
-        requestedAmount: amount,
-        opponentTokens: opponent.tokens || 0,
-        timestamp: Date.now()
-      });
-
-      // Toast local expliquant le problème
-      const toastDiv = document.createElement('div');
-      toastDiv.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] animate-slide-in';
-      toastDiv.innerHTML = `
-        <div class="flex items-center gap-2">
-          <span class="text-xl">⚠️</span>
-          <div>
-            <p class="font-semibold">${opponent.pseudo} pa gen ase jeton!</p>
-            <p class="text-sm">Li gen ${opponent.tokens || 0} jetons, men ou mande ${amount}</p>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(toastDiv);
-      setTimeout(() => {
-        toastDiv.remove();
-        handleCancel();
-      }, 4000);
       
       return;
     }
@@ -309,110 +306,110 @@ import { ref, set, onValue, remove } from 'firebase/database';
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-        <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 p-6 rounded-t-2xl">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-3">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[95vh] overflow-y-auto">
+        <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 p-4 rounded-t-2xl sticky top-0 z-10">
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <Coins className="w-8 h-8 text-white" />
+            <div className="flex items-center gap-2">
+              <Coins className="w-6 h-6 text-white" />
               <div>
-                <h2 className="text-2xl font-bold text-white">Mize Jeton</h2>
-                <p className="text-yellow-100 text-sm">Chwazi kantite jeton pou mize</p>
+                <h2 className="text-xl font-bold text-white">Mize Jeton</h2>
+                <p className="text-yellow-100 text-xs">Chwazi kantite jeton</p>
               </div>
             </div>
             <button 
               onClick={handleCancel}
               disabled={isWaiting && myBet && opponentBet}
-              className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors disabled:opacity-50"
+              className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors disabled:opacity-50 flex-shrink-0"
             >
-              <X className="w-6 h-6 text-white" />
+              <X className="w-5 h-5 text-white" />
             </button>
           </div>
         </div>
 
-        <div className="p-6">
-          {/* Affichage des jetons actuels */}
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 mb-6">
+        <div className="p-4 space-y-3">
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-3">
             <div className="flex items-center justify-between">
-              <span className="text-gray-700 font-semibold">Jeton ou:</span>
-              <div className="flex items-center gap-2">
-                <Coins className="w-5 h-5 text-yellow-600" />
-                <span className="text-2xl font-bold text-green-700">{userData?.tokens || 0}</span>
+              <span className="text-gray-700 font-semibold text-sm">Jeton ou:</span>
+              <div className="flex items-center gap-1">
+                <Coins className="w-4 h-4 text-yellow-600" />
+                <span className="text-xl font-bold text-green-700">{userData?.tokens || 0}</span>
               </div>
             </div>
           </div>
 
-          {/* Affichage adversaire */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Advèsè:</p>
-                <p className="font-bold text-gray-800">{opponent.pseudo}</p>
-                <div className="flex items-center gap-1 mt-1">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-600">Advèsè:</p>
+                <p className="font-bold text-gray-800 truncate">{opponent.pseudo}</p>
+                <div className="flex items-center gap-1 mt-0.5">
                   <Coins className="w-3 h-3 text-yellow-600" />
                   <span className="text-xs text-gray-600">{opponent.tokens || 0} jetons</span>
                 </div>
               </div>
               {opponentBet ? (
-                <div className="flex items-center gap-2 bg-green-500 text-white px-3 py-2 rounded-lg">
-                  <Coins className="w-4 h-4" />
-                  <span className="font-bold">{opponentBet}</span>
+                <div className="flex items-center gap-1.5 bg-green-500 text-white px-2.5 py-1.5 rounded-lg flex-shrink-0">
+                  <Coins className="w-3.5 h-3.5" />
+                  <span className="font-bold text-sm">{opponentBet}</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 text-gray-500">
-                  <Loader className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Tann mise...</span>
+                <div className="flex items-center gap-1.5 text-gray-500 flex-shrink-0">
+                  <Loader className="w-3.5 h-3.5 animate-spin" />
+                  <span className="text-xs">Tann...</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Message d'erreur */}
           {error && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-3 mb-4 rounded">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-red-600" />
-                <p className="text-sm text-red-700 font-semibold">{error}</p>
+            <div className="bg-red-50 border-l-4 border-red-500 p-2 rounded">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-red-700 font-semibold">{error}</p>
               </div>
             </div>
           )}
 
-          {/* Options de mise */}
           {!myBet ? (
             <>
-              <h3 className="text-lg font-bold text-gray-800 mb-4">
-                {opponentBet ? `Mize ${opponentBet} jetons pou matche` : 'Chwazi mize ou'}
+              <h3 className="text-base font-bold text-gray-800 pt-1">
+                {opponentBet ? `Mize ${opponentBet} jetons` : 'Chwazi mize ou'}
               </h3>
               
-              {/* ✅ Message d'attente si pas de mise adversaire */}
-              {!opponentBet && (
-                <div className="bg-blue-50 border-l-4 border-blue-400 p-3 mb-4 rounded">
-                  <p className="text-sm text-blue-700">
-                    ⏳ Tann {opponent.pseudo} chwazi mize li...
+              {opponentBet ? (
+                <div className="bg-green-50 border-l-4 border-green-400 p-2 rounded animate-pulse">
+                  <p className="text-xs text-green-700 font-bold">
+                    ✅ {opponent.pseudo} mize {opponentBet}. Klike {opponentBet}!
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-blue-50 border-l-4 border-blue-400 p-2 rounded">
+                  <p className="text-xs text-blue-700">
+                    ⏳ Tann {opponent.pseudo}...
                   </p>
                 </div>
               )}
               
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 {betOptions.map((amount) => {
                   const canAfford = amount <= (userData?.tokens || 0);
-                  const opponentCanAfford = amount <= (opponent?.tokens || 0);
                   
-                  // ✅ CORRECTION: Logique de désactivation améliorée
                   let isDisabled = false;
                   let disabledReason = '';
+                  let shouldHighlight = false;
                   
                   if (!canAfford) {
                     isDisabled = true;
-                    disabledReason = 'Ou pa gen ase jeton';
-                  } else if (!opponentCanAfford) {
-                    isDisabled = true;
-                    disabledReason = `${opponent.pseudo} pa gen ase jeton`;
+                    disabledReason = 'Pa gen ase';
                   } else if (opponentBet) {
-                    // Si l'adversaire a misé, on peut SEULEMENT cliquer sur le même montant
-                    if (amount !== opponentBet) {
+                    if (amount === opponentBet) {
+                      isDisabled = false;
+                      shouldHighlight = true;
+                      disabledReason = '';
+                    } else {
                       isDisabled = true;
-                      disabledReason = `Dwe matche ${opponentBet} jetons`;
+                      disabledReason = `Dwe ${opponentBet}`;
                     }
                   }
 
@@ -421,27 +418,30 @@ import { ref, set, onValue, remove } from 'firebase/database';
                       key={amount}
                       onClick={() => handlePlaceBet(amount)}
                       disabled={isDisabled}
-                      className={`p-4 rounded-xl border-2 transition-all ${
+                      className={`p-3 rounded-xl border-2 transition-all ${
                         isDisabled
                           ? 'border-gray-200 bg-gray-100 opacity-50 cursor-not-allowed'
-                          : opponentBet && amount === opponentBet
-                          ? 'border-green-600 bg-green-50 hover:bg-green-100 shadow-lg animate-pulse'
-                          : 'border-yellow-300 bg-yellow-50 hover:bg-yellow-100 hover:shadow-md'
+                          : shouldHighlight
+                          ? 'border-green-600 bg-green-50 hover:bg-green-100 shadow-lg animate-pulse ring-2 ring-green-300'
+                          : 'border-yellow-300 bg-yellow-50 hover:bg-yellow-100 hover:shadow-md cursor-pointer'
                       }`}
-                      title={disabledReason || 'Klike pou mize'}
+                      title={disabledReason || (shouldHighlight ? 'Klike pou matche!' : 'Klike pou mize')}
                     >
-                      <div className="flex items-center justify-center mb-2">
-                        <Coins className={`w-6 h-6 ${
-                          isDisabled ? 'text-gray-400' : 'text-yellow-600'
+                      <div className="flex items-center justify-center mb-1">
+                        <Coins className={`w-5 h-5 ${
+                          isDisabled ? 'text-gray-400' : shouldHighlight ? 'text-green-600' : 'text-yellow-600'
                         }`} />
                       </div>
-                      <p className={`font-bold text-lg ${
-                        isDisabled ? 'text-gray-400' : 'text-gray-800'
+                      <p className={`font-bold ${
+                        isDisabled ? 'text-gray-400' : shouldHighlight ? 'text-green-700' : 'text-gray-800'
                       }`}>
                         {amount}
                       </p>
-                      {disabledReason && (
-                        <p className="text-xs text-red-500 mt-1">{disabledReason}</p>
+                      {shouldHighlight && (
+                        <p className="text-[10px] text-green-600 font-bold mt-0.5">KLIKE!</p>
+                      )}
+                      {disabledReason && !shouldHighlight && (
+                        <p className="text-[9px] text-red-500 mt-0.5 leading-tight">{disabledReason}</p>
                       )}
                     </button>
                   );
@@ -449,16 +449,16 @@ import { ref, set, onValue, remove } from 'firebase/database';
               </div>
             </>
           ) : (
-            <div className="text-center py-8">
-              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                <Loader className="w-10 h-10 text-green-600 animate-spin" />
+            <div className="text-center py-6">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+                <Loader className="w-8 h-8 text-green-600 animate-spin" />
               </div>
-              <h3 className="text-xl font-bold text-gray-800 mb-2">Mize Anrejistre!</h3>
-              <p className="text-gray-600 mb-1">Ou mize: <span className="font-bold text-green-600">{myBet} jetons</span></p>
-              <p className="text-sm text-gray-500">
+              <h3 className="text-lg font-bold text-gray-800 mb-1">Mize Anrejistre!</h3>
+              <p className="text-sm text-gray-600">Ou mize: <span className="font-bold text-green-600">{myBet} jetons</span></p>
+              <p className="text-xs text-gray-500 mt-1">
                 {opponentBet 
                   ? 'Preparasyon jwèt...' 
-                  : `Tann ${opponent.pseudo} mize...`}
+                  : `Tann ${opponent.pseudo}...`}
               </p>
             </div>
           )}
@@ -466,7 +466,7 @@ import { ref, set, onValue, remove } from 'firebase/database';
           {!myBet && (
             <button
               onClick={handleCancel}
-              className="w-full mt-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-xl transition-colors"
+              className="w-full py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-xl transition-colors text-sm"
             >
               Anile
             </button>
