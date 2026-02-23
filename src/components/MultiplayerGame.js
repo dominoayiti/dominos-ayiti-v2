@@ -3,7 +3,7 @@ import { User, Coins, ArrowLeft, RotateCcw, Skull, Trophy, Wifi, WifiOff, AlertT
 import { database } from '../firebase-config';
 import { ref, set, onValue, update, get, remove, onDisconnect, serverTimestamp } from 'firebase/database';
 
-// ─── CONSTANTES ──────────────────────────────────────────────────────────────
+// ─── CONSTANTES ───────────────────────────────────────────────────────────────
 const generateDeck = () => {
   const deck = [];
   for (let i = 0; i <= 6; i++)
@@ -13,7 +13,7 @@ const generateDeck = () => {
 };
 
 const shuffleDeck = (deck) => {
-  let d = [...deck];
+  const d = [...deck];
   for (let i = d.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [d[i], d[j]] = [d[j], d[i]];
@@ -23,18 +23,44 @@ const shuffleDeck = (deck) => {
 
 const sumHand = (hand) => (hand || []).reduce((s, t) => s + t.v1 + t.v2, 0);
 
-// ─── DOTS DOMINO ─────────────────────────────────────────────────────────────
-const DotGrid = ({ value }) => {
-  const patterns = {
-    0: [], 1: [4], 2: [0, 8], 3: [0, 4, 8],
-    4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8],
-  };
+// ─── DOT PATTERNS (grille 3x3 : index 0‥8) ───────────────────────────────────
+//  0 | 1 | 2
+//  3 | 4 | 5
+//  6 | 7 | 8
+const DOT_PATTERNS = {
+  0: [],
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8],
+};
+
+// ─── DOT GRID ─────────────────────────────────────────────────────────────────
+const DotGrid = ({ value, dotPx = 7 }) => {
+  const dots = DOT_PATTERNS[value] || [];
   return (
-    <div className="grid grid-cols-3 gap-[1px] w-full h-full p-[2px]">
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, 1fr)',
+      gap: 2,
+      width: '100%',
+      height: '100%',
+      padding: 4,
+      boxSizing: 'border-box',
+    }}>
       {Array.from({ length: 9 }, (_, i) => (
-        <div key={i} className="flex items-center justify-center">
-          {(patterns[value] || []).includes(i) && (
-            <div className="w-[5px] h-[5px] rounded-full bg-gray-800" />
+        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {dots.includes(i) && (
+            <div style={{
+              width: dotPx,
+              height: dotPx,
+              borderRadius: '50%',
+              backgroundColor: '#111827',
+              flexShrink: 0,
+              boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
+            }} />
           )}
         </div>
       ))}
@@ -42,39 +68,89 @@ const DotGrid = ({ value }) => {
   );
 };
 
-const DominoTile = ({ tile, onClick, disabled, highlight, mini }) => (
+// ─── TUILE MAIN (portrait, w=56 h=112) ───────────────────────────────────────
+const HandDomino = ({ tile, onClick, disabled, highlight }) => (
   <button
     onClick={onClick}
     disabled={disabled}
-    className={`
-      ${mini ? 'w-8 h-16' : 'w-12 h-24'}
-      relative flex flex-col rounded-lg border-2 shadow-md
-      transition-all duration-150 select-none overflow-hidden
-      ${disabled
-        ? 'border-gray-300 bg-gray-50 cursor-default opacity-70'
-        : highlight
-        ? 'border-yellow-400 bg-white cursor-pointer hover:scale-110 hover:-translate-y-1 shadow-yellow-200/60 shadow-lg'
-        : 'border-gray-300 bg-white cursor-pointer hover:scale-105 hover:-translate-y-0.5'
-      }
-    `}
+    style={{ flexShrink: 0, width: 56, height: 112, display: 'flex', flexDirection: 'column',
+      borderRadius: 12, border: `2px solid ${highlight && !disabled ? '#facc15' : '#d1d5db'}`,
+      background: 'white', cursor: disabled ? 'default' : 'pointer', outline: 'none',
+      boxShadow: highlight && !disabled ? '0 0 16px rgba(250,204,21,0.5), 0 4px 12px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.2)',
+      opacity: disabled ? 0.6 : 1,
+      transition: 'transform 0.1s, box-shadow 0.1s',
+      position: 'relative', overflow: 'hidden',
+    }}
+    onMouseEnter={e => { if (!disabled) e.currentTarget.style.transform = highlight ? 'scale(1.12) translateY(-8px)' : 'scale(1.06) translateY(-4px)'; }}
+    onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
   >
-    <div className={`flex-1 flex items-center justify-center ${mini ? 'w-[14px] h-[14px]' : 'w-[26px] h-[26px]'}`}>
-      <DotGrid value={tile.v1} />
+    <div style={{ flex: 1, width: '100%' }}>
+      <DotGrid value={tile.v1} dotPx={7} />
     </div>
-    <div className="h-px bg-gray-400 mx-1 shrink-0" />
-    <div className={`flex-1 flex items-center justify-center ${mini ? 'w-[14px] h-[14px]' : 'w-[26px] h-[26px]'}`}>
-      <DotGrid value={tile.v2} />
+    <div style={{ height: 2, backgroundColor: '#9ca3af', margin: '0 8px', flexShrink: 0 }} />
+    <div style={{ flex: 1, width: '100%' }}>
+      <DotGrid value={tile.v2} dotPx={7} />
     </div>
     {highlight && !disabled && (
-      <div className="absolute inset-0 rounded-lg ring-2 ring-yellow-400 ring-opacity-70 pointer-events-none" />
+      <div style={{ position: 'absolute', inset: 0, borderRadius: 10, boxShadow: 'inset 0 0 0 2px #facc15', pointerEvents: 'none' }} />
     )}
   </button>
 );
 
-// ─── TOAST HELPER ─────────────────────────────────────────────────────────────
+// ─── TUILE PLATEAU ────────────────────────────────────────────────────────────
+// Doub  (v1===v2) → portrait  w=36  h=68  séparateur horizontal  + barre verte
+// Autre           → paysage   w=68  h=36  séparateur vertical
+const BoardDomino = ({ tile }) => {
+  const isDouble = tile.v1 === tile.v2;
+
+  if (isDouble) {
+    return (
+      <div style={{
+        flexShrink: 0, width: 36, height: 68,
+        display: 'flex', flexDirection: 'column',
+        background: 'white', borderRadius: 8,
+        border: '2px solid #6b7280',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+        overflow: 'hidden', position: 'relative',
+      }}>
+        {/* Barre verte = marqueur double */}
+        <div style={{ height: 3, backgroundColor: '#10b981', flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <DotGrid value={tile.v1} dotPx={5} />
+        </div>
+        <div style={{ height: 2, backgroundColor: '#9ca3af', margin: '0 4px', flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <DotGrid value={tile.v2} dotPx={5} />
+        </div>
+      </div>
+    );
+  }
+
+  // Paysage
+  return (
+    <div style={{
+      flexShrink: 0, width: 68, height: 36,
+      display: 'flex', flexDirection: 'row',
+      background: 'white', borderRadius: 8,
+      border: '2px solid #9ca3af',
+      boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+      overflow: 'hidden',
+    }}>
+      <div style={{ flex: 1 }}>
+        <DotGrid value={tile.v1} dotPx={5} />
+      </div>
+      <div style={{ width: 2, backgroundColor: '#9ca3af', margin: '4px 0', flexShrink: 0 }} />
+      <div style={{ flex: 1 }}>
+        <DotGrid value={tile.v2} dotPx={5} />
+      </div>
+    </div>
+  );
+};
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
 const showToast = (msg, color = 'bg-gray-800', duration = 3000) => {
   const el = document.createElement('div');
-  el.className = `fixed top-6 left-1/2 -translate-x-1/2 ${color} text-white px-5 py-3 rounded-2xl shadow-2xl z-[9999] text-sm font-semibold flex items-center gap-2 transition-all`;
+  el.className = `fixed top-6 left-1/2 -translate-x-1/2 ${color} text-white px-5 py-3 rounded-2xl shadow-2xl z-[9999] text-sm font-semibold flex items-center gap-2`;
   el.innerHTML = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), duration);
@@ -82,134 +158,108 @@ const showToast = (msg, color = 'bg-gray-800', duration = 3000) => {
 
 // ─── COMPOSANT PRINCIPAL ──────────────────────────────────────────────────────
 const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
-  const [loading, setLoading]           = useState(true);
-  const [gameState, setGameState]       = useState(null);
-  const [myHand, setMyHand]             = useState([]);
-  const [result, setResult]             = useState(null);
-  const [playable, setPlayable]         = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [gameState, setGameState]     = useState(null);
+  const [myHand, setMyHand]           = useState([]);
+  const [result, setResult]           = useState(null);
+  const [playable, setPlayable]       = useState([]);
 
-  // Présence & réseau
-  const [opponentOnline, setOpponentOnline]   = useState(true);
-  const [opponentDiscoAt, setOpponentDiscoAt] = useState(null);
-  const [ setMyConnected]         = useState(true);
+  const [opponentOnline, setOpponentOnline]     = useState(true);
+  const [opponentDiscoAt, setOpponentDiscoAt]   = useState(null);
+  const [, setMyConnected]                       = useState(true);
   const [showNetworkAlert, setShowNetworkAlert] = useState(false);
-
-  // Abandon
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
 
-  const resultHandled = useRef(false);
+  const resultHandled   = useRef(false);
+  const tokensUpdated   = useRef(false);
   const presenceCleanup = useRef(null);
 
-  const gameRef     = ref(database, `games/${gameData.sessionId}`);
-  const opponentUid = currentUser.uid === gameData.player1Uid ? gameData.player2Uid : gameData.player1Uid;
+  const gameRef        = ref(database, `games/${gameData.sessionId}`);
+  const opponentUid    = currentUser.uid === gameData.player1Uid ? gameData.player2Uid  : gameData.player1Uid;
   const opponentPseudo = currentUser.uid === gameData.player1Uid ? gameData.player2Pseudo : gameData.player1Pseudo;
-  const myPseudo    = currentUser.uid === gameData.player1Uid ? gameData.player1Pseudo : gameData.player2Pseudo;
+  const myPseudo       = currentUser.uid === gameData.player1Uid ? gameData.player1Pseudo : gameData.player2Pseudo;
 
-  // ─── INIT JEU ─────────────────────────────────────────────────────────────
+  // ─── INIT ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const initGame = async () => {
       if (currentUser.uid !== gameData.player1Uid) return;
       const snap = await get(gameRef);
       if (snap.exists()) return;
-      const deck   = shuffleDeck(generateDeck());
-      const p1Hand = deck.slice(0, 7);
-      const p2Hand = deck.slice(7, 14);
+      const deck = shuffleDeck(generateDeck());
       await set(gameRef, {
-        status: 'playing',
-        board: [],
-        deck: deck.slice(14),
-        turn: gameData.player1Uid,
-        lastAction: null,
-        consecutivePasses: 0,
-        winner: null,
-        winType: null,
-        startedAt: Date.now(),
-        paused: false,
+        status: 'playing', board: [], deck: deck.slice(14),
+        turn: gameData.player1Uid, lastAction: null,
+        consecutivePasses: 0, winner: null, winType: null,
+        startedAt: Date.now(), paused: false,
         hands: {
-          [gameData.player1Uid]: p1Hand,
-          [gameData.player2Uid]: p2Hand,
+          [gameData.player1Uid]: deck.slice(0, 7),
+          [gameData.player2Uid]: deck.slice(7, 14),
         },
       });
     };
     initGame();
   }, []); // eslint-disable-line
 
-  // ─── PRÉSENCE FIREBASE (.info/connected + onDisconnect) ───────────────────
+  // ─── PRÉSENCE ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    const connectedRef     = ref(database, '.info/connected');
-    const myPresenceRef    = ref(database, `gamePresence/${gameData.sessionId}/${currentUser.uid}`);
-    const oppPresenceRef   = ref(database, `gamePresence/${gameData.sessionId}/${opponentUid}`);
+    const connectedRef   = ref(database, '.info/connected');
+    const myPresenceRef  = ref(database, `gamePresence/${gameData.sessionId}/${currentUser.uid}`);
+    const oppPresenceRef = ref(database, `gamePresence/${gameData.sessionId}/${opponentUid}`);
 
-    // Ma propre connexion
-    const unsubConnected = onValue(connectedRef, async (snap) => {
+    const unsubConn = onValue(connectedRef, async (snap) => {
       const connected = snap.val();
       setMyConnected(connected);
-
       if (connected) {
         setShowNetworkAlert(false);
-        // Écrire présence + programmer suppression si déconnexion
         await set(myPresenceRef, { online: true, lastSeen: Date.now() });
         onDisconnect(myPresenceRef).set({ online: false, lastSeen: serverTimestamp() });
       } else {
         setShowNetworkAlert(true);
-        showToast('⚠️ Koneksyon ou fèb — ap eseye rekonekte...', 'bg-orange-600', 6000);
+        showToast('⚠️ Koneksyon ou feb — ap eseye rekonekte...', 'bg-orange-600', 6000);
       }
     });
 
-    // Présence adversaire
     const unsubOpp = onValue(oppPresenceRef, (snap) => {
       const data = snap.val();
       if (!data) return;
-
-      const wasOnline = opponentOnline;
-      const isOnline  = data.online === true;
-      setOpponentOnline(isOnline);
-
-      if (!isOnline && wasOnline) {
-        // Vient de se déconnecter
-        const discoTime = Date.now();
-        setOpponentDiscoAt(discoTime);
-        showToast(`📡 ${opponentPseudo} pèdi koneksyon...`, 'bg-orange-700', 5000);
-
-        // Après 30 secondes sans reconnexion → victoire par forfait
-        const timer = setTimeout(async () => {
-          const freshSnap = await get(oppPresenceRef);
-          const fresh = freshSnap.val();
-          if (!fresh || fresh.online === false) {
-            showToast(`⏱️ ${opponentPseudo} dekonekte twòp lontan — ou genyen!`, 'bg-green-600', 5000);
-            await finishGame(currentUser.uid, 'forfait');
-          }
-        }, 30000);
-        presenceCleanup.current = timer;
-      }
-
-      if (isOnline && !wasOnline) {
-        setOpponentDiscoAt(null);
-        clearTimeout(presenceCleanup.current);
-        showToast(`✅ ${opponentPseudo} rekonekte!`, 'bg-green-700', 3000);
-      }
+      const isOnline = data.online === true;
+      setOpponentOnline(prev => {
+        if (!isOnline && prev) {
+          setOpponentDiscoAt(Date.now());
+          showToast(`${opponentPseudo} pedi koneksyon...`, 'bg-orange-700', 5000);
+          const timer = setTimeout(async () => {
+            const fresh = (await get(oppPresenceRef)).val();
+            if (!fresh || fresh.online === false) {
+              showToast(`${opponentPseudo} dekonekte twop lontan — ou genyen!`, 'bg-green-600', 5000);
+              await finishGame(currentUser.uid, 'forfait');
+            }
+          }, 30000);
+          presenceCleanup.current = timer;
+        }
+        if (isOnline && !prev) {
+          setOpponentDiscoAt(null);
+          clearTimeout(presenceCleanup.current);
+          showToast(`${opponentPseudo} rekonekte!`, 'bg-green-700', 3000);
+        }
+        return isOnline;
+      });
     });
 
     return () => {
-      unsubConnected();
-      unsubOpp();
+      unsubConn(); unsubOpp();
       clearTimeout(presenceCleanup.current);
-      // Nettoyer ma présence
       set(myPresenceRef, { online: false, lastSeen: Date.now() }).catch(() => {});
     };
   }, []); // eslint-disable-line
 
-  // ─── ÉCOUTE ÉTAT DU JEU ───────────────────────────────────────────────────
+  // ─── ÉCOUTE JEU ────────────────────────────────────────────────────────────
   useEffect(() => {
     const unsub = onValue(gameRef, (snap) => {
       const data = snap.val();
       if (!data) { setLoading(false); return; }
-
       setLoading(false);
       setGameState(data);
-
       if (data.hands?.[currentUser.uid]) setMyHand(data.hands[currentUser.uid]);
-
       if (data.status === 'finished' && data.winner && !resultHandled.current) {
         resultHandled.current = true;
         const iWon = data.winner === currentUser.uid;
@@ -219,7 +269,19 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
     return () => unsub();
   }, []); // eslint-disable-line
 
-  // ─── TUILES JOUABLES ──────────────────────────────────────────────────────
+  // ─── MISE À JOUR JETONS (chaque joueur met à jour seulement SES propres jetons) ──
+  useEffect(() => {
+    if (!result || tokensUpdated.current) return;
+    tokensUpdated.current = true;
+    const bet = parseInt(gameData.bet);
+    const myTokenRef = ref(database, `users/${currentUser.uid}/tokens`);
+    get(myTokenRef).then(snap => {
+      const current = snap.val() || 0;
+      return set(myTokenRef, result.won ? current + bet : Math.max(0, current - bet));
+    }).catch(e => console.error('Token update:', e));
+  }, [result]); // eslint-disable-line
+
+  // ─── TUILES JOUABLES ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!gameState || !myHand.length) { setPlayable([]); return; }
     const board = gameState.board || [];
@@ -233,151 +295,99 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
     );
   }, [myHand, gameState]);
 
-  // ─── FIN DE PARTIE (écrit dans Firebase) ──────────────────────────────────
+  // ─── FIN DE PARTIE ─────────────────────────────────────────────────────────
   const finishGame = useCallback(async (winnerUid, winType) => {
     try {
-      await update(gameRef, {
-        status: 'finished',
-        winner: winnerUid,
-        winType,
-        finishedAt: Date.now(),
-      });
-    } catch (e) {
-      console.error('finishGame error:', e);
-    }
+      await update(gameRef, { status: 'finished', winner: winnerUid, winType, finishedAt: Date.now() });
+    } catch (e) { console.error('finishGame:', e); }
   }, [gameRef]);
 
-  // ─── JOUER UNE TUILE ──────────────────────────────────────────────────────
+  // ─── JOUER UNE TUILE ───────────────────────────────────────────────────────
   const handlePlayTile = async (idx) => {
     if (gameState?.turn !== currentUser.uid || !gameState) return;
     if (!playable.includes(idx)) return;
-
     const tile  = { ...myHand[idx] };
     const board = gameState.board || [];
-    let position  = 'right';
+    let position = 'right';
     let finalTile = { ...tile };
-
     if (board.length > 0) {
       const leftEnd  = board[0].v1;
       const rightEnd = board[board.length - 1].v2;
-
-      if (tile.v1 === rightEnd)       { position = 'right'; }
-      else if (tile.v2 === rightEnd)  { position = 'right'; finalTile = { ...tile, v1: tile.v2, v2: tile.v1 }; }
-      else if (tile.v2 === leftEnd)   { position = 'left'; }
-      else if (tile.v1 === leftEnd)   { position = 'left';  finalTile = { ...tile, v1: tile.v2, v2: tile.v1 }; }
+      if      (tile.v1 === rightEnd) { position = 'right'; }
+      else if (tile.v2 === rightEnd) { position = 'right'; finalTile = { ...tile, v1: tile.v2, v2: tile.v1 }; }
+      else if (tile.v2 === leftEnd)  { position = 'left'; }
+      else if (tile.v1 === leftEnd)  { position = 'left';  finalTile = { ...tile, v1: tile.v2, v2: tile.v1 }; }
     }
-
     const newHand  = myHand.filter((_, i) => i !== idx);
     const newBoard = position === 'left' ? [finalTile, ...board] : [...board, finalTile];
-
     await update(gameRef, {
-      board: newBoard,
-      [`hands/${currentUser.uid}`]: newHand,
-      turn: opponentUid,
-      consecutivePasses: 0,
+      board: newBoard, [`hands/${currentUser.uid}`]: newHand,
+      turn: opponentUid, consecutivePasses: 0,
       lastAction: { by: currentUser.uid, type: 'played', tile: finalTile },
     });
-
     if (newHand.length === 0) await finishGame(currentUser.uid, 'tombe');
   };
 
-  // ─── PIOCHER / PASSER ─────────────────────────────────────────────────────
+  // ─── PIOCHER / PASSER ──────────────────────────────────────────────────────
   const handleDraw = async () => {
     if (gameState?.turn !== currentUser.uid || !gameState) return;
     const deck = gameState.deck || [];
-
     if (deck.length > 0) {
-      const newDeck   = [...deck];
-      const drawn     = newDeck.pop();
-      const newHand   = [...myHand, drawn];
+      const newDeck = [...deck];
+      const drawn   = newDeck.pop();
       await update(gameRef, {
-        deck: newDeck,
-        [`hands/${currentUser.uid}`]: newHand,
-        turn: opponentUid,
-        consecutivePasses: 0,
+        deck: newDeck, [`hands/${currentUser.uid}`]: [...myHand, drawn],
+        turn: opponentUid, consecutivePasses: 0,
         lastAction: { by: currentUser.uid, type: 'drew', tile: drawn },
       });
     } else {
       const newPasses = (gameState.consecutivePasses || 0) + 1;
       await update(gameRef, {
-        consecutivePasses: newPasses,
-        turn: opponentUid,
+        consecutivePasses: newPasses, turn: opponentUid,
         lastAction: { by: currentUser.uid, type: 'passed' },
       });
       if (newPasses >= 2) {
-        const opHand   = gameState.hands?.[opponentUid] || [];
-        const myScore  = sumHand(myHand);
-        const opScore  = sumHand(opHand);
-        await finishGame(myScore <= opScore ? currentUser.uid : opponentUid, 'blokaj');
+        const opHand  = gameState.hands?.[opponentUid] || [];
+        await finishGame(sumHand(myHand) <= sumHand(opHand) ? currentUser.uid : opponentUid, 'blokaj');
       }
     }
   };
 
-  // ─── ABANDON (avec pénalité) ──────────────────────────────────────────────
+  // ─── ABANDON ───────────────────────────────────────────────────────────────
   const handleAbandonConfirm = async () => {
     setShowAbandonConfirm(false);
-    // Adversaire gagne par forfait
     await finishGame(opponentUid, 'abandon');
-    // Attendre que result soit mis à jour via listener avant d'exit
   };
 
-  // ─── MAJ JETONS & EXIT ────────────────────────────────────────────────────
+  // ─── EXIT ──────────────────────────────────────────────────────────────────
   const handleExit = useCallback(async () => {
-    if (!result) { onExit(); return; }
-    const bet = parseInt(gameData.bet);
-    try {
-      const myTokenRef  = ref(database, `users/${currentUser.uid}/tokens`);
-      const oppTokenRef = ref(database, `users/${opponentUid}/tokens`);
-
-      const [mySnap, oppSnap] = await Promise.all([get(myTokenRef), get(oppTokenRef)]);
-      const myTokens  = mySnap.val()  || 0;
-      const oppTokens = oppSnap.val() || 0;
-
-      if (result.won) {
-        // Gagnant récupère sa mise + la mise de l'adversaire
-        await set(myTokenRef,  myTokens  + bet);
-        await set(oppTokenRef, Math.max(0, oppTokens - bet));
-      } else {
-        // Perdant perd sa mise, gagnant (adversaire) a déjà été mis à jour
-        await set(myTokenRef, Math.max(0, myTokens - bet));
-        await set(oppTokenRef, oppTokens + bet);
-      }
-    } catch (e) {
-      console.error('Erreur tokens:', e);
-    }
     try { await remove(gameRef); } catch (_) {}
     try { await remove(ref(database, `gamePresence/${gameData.sessionId}`)); } catch (_) {}
     onExit();
-  }, [result, gameData, currentUser.uid, opponentUid, gameRef, onExit]);
+  }, [gameRef, gameData.sessionId, onExit]);
 
-  // ─── EXIT AUTO quand result arrivé via listener (cas abandon) ─────────────
-  // (on ne force pas l'exit — on affiche le modal de résultat normalement)
-
-  // ─── RENDER ───────────────────────────────────────────────────────────────
+  // ─── RENDER ────────────────────────────────────────────────────────────────
   if (loading || !gameState) {
     return (
       <div className="fixed inset-0 bg-emerald-950 flex flex-col items-center justify-center z-[150]">
         <div className="w-16 h-16 rounded-full border-4 border-emerald-700 border-t-emerald-300 animate-spin" />
-        <p className="text-emerald-300 mt-4 font-semibold tracking-wider text-sm">Chajman jwèt...</p>
+        <p className="text-emerald-300 mt-4 font-semibold tracking-wider text-sm">Chajman jwet...</p>
       </div>
     );
   }
 
-  const isMyTurn        = gameState.turn === currentUser.uid;
+  const isMyTurn          = gameState.turn === currentUser.uid;
   const opponentHandCount = gameState.hands?.[opponentUid]?.length ?? 7;
-  const deckCount       = gameState.deck?.length || 0;
-  const board           = gameState.board || [];
-  const hasPlayable     = playable.length > 0;
-  const lastAction      = gameState.lastAction;
-
-  // Secondes depuis déco adversaire
-  const discoSeconds = opponentDiscoAt ? Math.floor((Date.now() - opponentDiscoAt) / 1000) : 0;
+  const deckCount         = gameState.deck?.length || 0;
+  const board             = gameState.board || [];
+  const hasPlayable       = playable.length > 0;
+  const lastAction        = gameState.lastAction;
+  const discoSeconds      = opponentDiscoAt ? Math.floor((Date.now() - opponentDiscoAt) / 1000) : 0;
 
   return (
     <div className="fixed inset-0 z-[150] flex flex-col overflow-hidden"
       style={{ background: 'radial-gradient(ellipse at top, #064e3b 0%, #022c22 60%, #011a15 100%)' }}>
 
-      {/* Fond décoratif */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-10"
           style={{ background: 'radial-gradient(circle, #34d399, transparent)' }} />
@@ -385,23 +395,21 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
           style={{ background: 'radial-gradient(circle, #059669, transparent)' }} />
       </div>
 
-      {/* ── BANNIÈRE RÉSEAU FAIBLE ── */}
       {showNetworkAlert && (
         <div className="relative z-20 bg-orange-600 text-white text-center text-xs py-2 px-4 flex items-center justify-center gap-2 animate-pulse">
           <WifiOff className="w-4 h-4" />
-          <span>Koneksyon ou fèb — ap eseye rekonekte...</span>
+          <span>Koneksyon ou feb — ap eseye rekonekte...</span>
         </div>
       )}
 
-      {/* ── BANNIÈRE ADVERSAIRE DÉCONNECTÉ ── */}
       {!opponentOnline && (
-        <div className="relative z-20 bg-yellow-600 text-black text-center text-xs py-2 px-4 flex items-center justify-center gap-2">
+        <div className="relative z-20 bg-yellow-500 text-black text-center text-xs py-2 px-4 flex items-center justify-center gap-2 font-semibold">
           <Wifi className="w-4 h-4" />
-          <span>{opponentPseudo} dekonekte — ap tann li ({Math.max(0, 30 - discoSeconds)}s avan forfè)</span>
+          <span>{opponentPseudo} dekonekte — ap tann ({Math.max(0, 30 - discoSeconds)}s avan forfe)</span>
         </div>
       )}
 
-      {/* ══ HEADER ADVERSAIRE ══ */}
+      {/* ══ HEADER ══ */}
       <div className="relative z-10 flex items-center justify-between px-4 py-3"
         style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(52,211,153,0.15)' }}>
 
@@ -411,7 +419,6 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
               ${opponentOnline ? 'bg-gradient-to-br from-blue-500 to-indigo-600' : 'bg-gray-600'}`}>
               <User className="w-5 h-5 text-white" />
             </div>
-            {/* Indicateur online/offline */}
             <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-emerald-950
               ${opponentOnline ? 'bg-green-400' : 'bg-red-500 animate-pulse'}`} />
             {gameState.turn === opponentUid && opponentOnline && (
@@ -421,16 +428,15 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
           <div>
             <div className="flex items-center gap-2">
               <p className="text-white font-bold text-sm leading-none">{opponentPseudo}</p>
-              {opponentOnline
-                ? <span className="text-[9px] text-green-400 font-semibold">● EN LIGN</span>
-                : <span className="text-[9px] text-red-400 font-semibold">● DEKONEKTE</span>
-              }
+              <span className={`text-[9px] font-bold ${opponentOnline ? 'text-green-400' : 'text-red-400'}`}>
+                {opponentOnline ? '● EN LIGN' : '● DEKONEKTE'}
+              </span>
             </div>
-            <div className="flex gap-0.5 mt-0.5">
-              {Array.from({ length: Math.min(opponentHandCount, 7) }, (_, i) => (
-                <div key={i} className="w-3 h-5 rounded-sm bg-emerald-700 border border-emerald-600 shadow-sm" />
+            <div className="flex gap-[3px] mt-1 items-center">
+              {Array.from({ length: Math.min(opponentHandCount, 10) }, (_, i) => (
+                <div key={i} style={{ width: 8, height: 18, borderRadius: 2, background: '#065f46', border: '1px solid #047857', flexShrink: 0 }} />
               ))}
-              <span className="text-emerald-400 text-xs ml-1">{opponentHandCount}</span>
+              <span className="text-emerald-400 text-xs ml-1 font-bold">{opponentHandCount}</span>
             </div>
           </div>
         </div>
@@ -450,44 +456,48 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
       </div>
 
       {/* ══ PLATEAU ══ */}
-      <div className="relative flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
+      <div className="relative flex-1 flex flex-col items-center justify-center overflow-hidden">
 
         {lastAction && lastAction.by === opponentUid && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20
-            bg-black/60 backdrop-blur-sm text-white text-xs px-4 py-1.5 rounded-full border border-white/10 shadow-lg">
+            bg-black/70 backdrop-blur-sm text-white text-xs px-4 py-1.5 rounded-full border border-white/10 shadow-lg whitespace-nowrap">
             {lastAction.type === 'played' && `${opponentPseudo} jwe [${lastAction.tile?.v1}|${lastAction.tile?.v2}]`}
             {lastAction.type === 'drew'   && `${opponentPseudo} pran yon domino`}
             {lastAction.type === 'passed' && `${opponentPseudo} pase (pioche vid)`}
           </div>
         )}
 
-        <div className="w-full max-w-full overflow-x-auto overflow-y-hidden">
-          <div className="relative flex items-center justify-center min-h-[120px] px-2">
-            <div className="absolute inset-2 rounded-2xl opacity-30"
-              style={{ background: 'repeating-linear-gradient(45deg,#065f46 0px,#065f46 1px,transparent 1px,transparent 12px)' }} />
+        {/* Zone plateau avec scroll horizontal */}
+        <div className="w-full overflow-x-auto overflow-y-hidden px-4"
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#065f46 transparent' }}>
+          <div className="relative flex items-center justify-center py-5 px-6"
+            style={{ minWidth: 'max-content', margin: '0 auto', minHeight: 120 }}>
+            {/* Fond quadrillé tapis */}
+            <div className="absolute inset-0 rounded-2xl opacity-20"
+              style={{ background: 'repeating-linear-gradient(45deg,#065f46 0px,#065f46 1px,transparent 1px,transparent 14px)' }} />
+
             {board.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 opacity-40">
-                <div className="w-12 h-24 rounded-xl border-2 border-dashed border-emerald-400" />
+              <div className="relative flex flex-col items-center gap-3 opacity-40 py-4">
+                <div style={{ width: 68, height: 36, border: '2px dashed #34d399', borderRadius: 8 }} />
                 <p className="text-emerald-400 text-xs font-semibold tracking-wider uppercase">Jwe premye domino</p>
               </div>
             ) : (
-              <div className="flex gap-1 items-center py-2 px-2" style={{ minWidth: 'max-content' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 {board.map((tile, i) => (
-                  <DominoTile key={i} tile={tile} disabled mini />
+                  <BoardDomino key={i} tile={tile} />
                 ))}
               </div>
             )}
           </div>
         </div>
 
-        <div className="flex gap-4 mt-2">
+        {/* Stats */}
+        <div className="flex gap-3 mt-1">
           <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-black/30 rounded-full px-3 py-1">
-            <span className="font-bold">{deckCount}</span>
-            <span className="opacity-70">nan pioche</span>
+            <span className="font-bold">{deckCount}</span><span className="opacity-70">nan pioche</span>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-black/30 rounded-full px-3 py-1">
-            <span className="font-bold">{board.length}</span>
-            <span className="opacity-70">sou plato</span>
+            <span className="font-bold">{board.length}</span><span className="opacity-70">sou plato</span>
           </div>
           {(gameState.consecutivePasses || 0) > 0 && (
             <div className="text-xs text-orange-400 bg-orange-500/10 rounded-full px-3 py-1 border border-orange-500/30">
@@ -497,9 +507,9 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
       </div>
 
-      {/* ══ MAIN DU JOUEUR ══ */}
+      {/* ══ MAIN ══ */}
       <div className="relative z-10"
-        style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(16px)', borderTop: '1px solid rgba(52,211,153,0.15)' }}>
+        style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(16px)', borderTop: '1px solid rgba(52,211,153,0.15)' }}>
 
         <div className="flex items-center justify-between px-4 pt-3 pb-1">
           <div className="flex items-center gap-2">
@@ -521,11 +531,12 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
           </div>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto px-4 py-3 items-end justify-center" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex gap-2 overflow-x-auto px-4 py-3 items-end justify-center"
+          style={{ scrollbarWidth: 'none', minHeight: 128 }}>
           {myHand.length === 0
             ? <p className="text-emerald-400 text-sm italic py-6">Men ou vid...</p>
             : myHand.map((tile, i) => (
-                <DominoTile
+                <HandDomino
                   key={tile.id || i}
                   tile={tile}
                   onClick={() => handlePlayTile(i)}
@@ -537,23 +548,17 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
 
         <div className="flex gap-3 px-4 pb-4 pt-1">
-          <button
-            onClick={handleDraw}
-            disabled={!isMyTurn || hasPlayable}
+          <button onClick={handleDraw} disabled={!isMyTurn || hasPlayable}
             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all ${
               isMyTurn && !hasPlayable
                 ? 'bg-orange-500 hover:bg-orange-400 text-white shadow-lg active:scale-95'
                 : 'bg-white/5 text-white/20 cursor-not-allowed'
-            }`}
-          >
+            }`}>
             <RotateCcw className="w-4 h-4" />
             {deckCount > 0 ? 'Pran Domino' : 'Pase Tou'}
           </button>
-
-          <button
-            onClick={() => setShowAbandonConfirm(true)}
-            className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-red-600/80 hover:bg-red-500 text-white font-bold text-sm transition-all active:scale-95"
-          >
+          <button onClick={() => setShowAbandonConfirm(true)}
+            className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-red-600/80 hover:bg-red-500 text-white font-bold text-sm transition-all active:scale-95">
             <ArrowLeft className="w-4 h-4" />
             Kite
           </button>
@@ -574,27 +579,21 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
                 <p className="text-gray-400 text-xs">Konsekans pati</p>
               </div>
             </div>
-
             <div className="bg-red-900/30 border border-red-700/40 rounded-xl p-4 mb-5">
-              <p className="text-red-300 text-sm font-semibold mb-2">⚠️ Si ou kite jeu a kounye a :</p>
+              <p className="text-red-300 text-sm font-semibold mb-2">Si ou kite jeu a kounye a :</p>
               <ul className="text-gray-300 text-sm space-y-1">
-                <li>• {opponentPseudo} ap <span className="text-green-400 font-bold">genyen pa forfè</span></li>
-                <li>• Ou ap <span className="text-red-400 font-bold">pèdi {gameData.bet} jeton</span></li>
+                <li>• {opponentPseudo} ap <span className="text-green-400 font-bold">genyen pa forfe</span></li>
+                <li>• Ou ap <span className="text-red-400 font-bold">pedi {gameData.bet} jeton</span></li>
                 <li>• Rezilta a pap chanje</li>
               </ul>
             </div>
-
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowAbandonConfirm(false)}
-                className="flex-1 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-bold text-sm transition-colors"
-              >
+              <button onClick={() => setShowAbandonConfirm(false)}
+                className="flex-1 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-bold text-sm">
                 Kontinye Jwe
               </button>
-              <button
-                onClick={handleAbandonConfirm}
-                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm transition-colors"
-              >
+              <button onClick={handleAbandonConfirm}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm">
                 Abandone (-{gameData.bet})
               </button>
             </div>
@@ -609,9 +608,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
           <div className={`w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl
             ${result.won ? 'border-2 border-yellow-400/60' : 'border-2 border-gray-600/40'}`}
             style={{ background: result.won ? 'linear-gradient(145deg,#1a1a2e,#16213e)' : 'linear-gradient(145deg,#1a1a1a,#2d2d2d)' }}>
-
             <div className={`h-2 w-full ${result.won ? 'bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-500' : 'bg-gradient-to-r from-gray-600 to-gray-700'}`} />
-
             <div className="p-8 text-center">
               <div className="flex justify-center mb-5">
                 {result.won ? (
@@ -630,23 +627,19 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
                   </div>
                 )}
               </div>
-
               <h2 className={`text-3xl font-black mb-1 tracking-tight ${result.won ? 'text-yellow-300' : 'text-gray-300'}`}>
                 {result.won
-                  ? (result.type === 'blokaj' ? 'Ou Genyen!' : result.type === 'forfait' || result.type === 'abandon' ? 'Forfè!' : 'OU TONBE!')
+                  ? (result.type === 'blokaj' ? 'Ou Genyen!' : (result.type === 'forfait' || result.type === 'abandon') ? 'Forfe!' : 'OU TONBE!')
                   : (result.type === 'abandon' ? 'Ou Abandone...' : 'Ou Pedi...')}
               </h2>
-
               <p className="text-sm mb-6 opacity-60 text-white">
                 {result.type === 'tombe'   && result.won  && 'Men ou te vid — viktorya!'}
                 {result.type === 'tombe'   && !result.won && `${opponentPseudo} fini anvan ou`}
                 {result.type === 'blokaj'  && 'Pati bloke — mwens pwen genyen'}
-                {result.type === 'forfait' && result.won  && `${opponentPseudo} dekonekte twòp lontan`}
+                {result.type === 'forfait' && result.won  && `${opponentPseudo} dekonekte twop lontan`}
                 {result.type === 'abandon' && result.won  && `${opponentPseudo} abandone pati a`}
-                {result.type === 'abandon' && !result.won && 'Ou kite pati a — pénalité aplike'}
+                {result.type === 'abandon' && !result.won && 'Ou kite pati a — penalite aplike'}
               </p>
-
-              {/* Calcul jetons */}
               <div className={`rounded-2xl p-5 mb-4 ${result.won
                 ? 'bg-gradient-to-r from-yellow-500/20 to-amber-500/10 border border-yellow-500/30'
                 : 'bg-red-900/20 border border-red-800/30'}`}>
@@ -659,19 +652,16 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
                 </div>
                 {result.won && (
                   <p className="text-xs text-yellow-400/70 mt-2">
-                    Mise ou ({result.amount}) + mise advèsè ({result.amount}) = +{result.amount} nèt
+                    Mise ou ({result.amount}) + mise advese ({result.amount}) = +{result.amount} net
                   </p>
                 )}
               </div>
-
-              <button
-                onClick={handleExit}
+              <button onClick={handleExit}
                 className={`w-full py-4 rounded-2xl font-black text-base transition-all active:scale-95 ${
                   result.won
                     ? 'bg-gradient-to-r from-yellow-400 to-amber-400 text-black hover:from-yellow-300 shadow-lg shadow-yellow-500/30'
                     : 'bg-gray-700 hover:bg-gray-600 text-white'
-                }`}
-              >
+                }`}>
                 Retounen Lobby
               </button>
             </div>
