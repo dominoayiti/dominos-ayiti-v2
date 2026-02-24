@@ -23,41 +23,25 @@ const shuffleDeck = (deck) => {
 
 const sumHand = (hand) => (hand || []).reduce((s, t) => s + t.v1 + t.v2, 0);
 
-// ─── DOT PATTERNS (grille 3×3 : index 0‥8) ───────────────────────────────────
-//  0 | 1 | 2
-//  3 | 4 | 5
-//  6 | 7 | 8
+// ─── DOT PATTERNS ─────────────────────────────────────────────────────────────
 const DOT_PATTERNS = {
-  0: [],
-  1: [4],
-  2: [0, 8],
-  3: [0, 4, 8],
-  4: [0, 2, 6, 8],
-  5: [0, 2, 4, 6, 8],
-  6: [0, 2, 3, 5, 6, 8],
+  0: [], 1: [4], 2: [0, 8], 3: [0, 4, 8],
+  4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8],
 };
 
 const DotGrid = ({ value, dotPx = 7 }) => {
   const dots = DOT_PATTERNS[value] || [];
   return (
     <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(3, 1fr)',
-      gap: 2,
-      width: '100%',
-      height: '100%',
-      padding: 4,
-      boxSizing: 'border-box',
+      display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 2,
+      width: '100%', height: '100%', padding: 4, boxSizing: 'border-box',
     }}>
       {Array.from({ length: 9 }, (_, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {dots.includes(i) && (
             <div style={{
-              width: dotPx,
-              height: dotPx,
-              borderRadius: '50%',
-              backgroundColor: '#111827',
-              flexShrink: 0,
+              width: dotPx, height: dotPx, borderRadius: '50%',
+              backgroundColor: '#111827', flexShrink: 0,
               boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
             }} />
           )}
@@ -67,35 +51,29 @@ const DotGrid = ({ value, dotPx = 7 }) => {
   );
 };
 
-// ─── TUILE MAIN (portrait fixe w=56 h=112) ───────────────────────────────────
+// ─── TUILE MAIN ───────────────────────────────────────────────────────────────
 const HandDomino = ({ tile, onClick, disabled, highlight }) => (
   <button
-    onClick={onClick}
-    disabled={disabled}
+    onClick={onClick} disabled={disabled}
     style={{
       flexShrink: 0, width: 56, height: 112,
       display: 'flex', flexDirection: 'column',
       borderRadius: 12,
       border: `2px solid ${highlight && !disabled ? '#facc15' : '#d1d5db'}`,
-      background: 'white', cursor: disabled ? 'default' : 'pointer',
-      outline: 'none',
+      background: 'white', cursor: disabled ? 'default' : 'pointer', outline: 'none',
       boxShadow: highlight && !disabled
         ? '0 0 16px rgba(250,204,21,0.5), 0 4px 12px rgba(0,0,0,0.3)'
         : '0 2px 8px rgba(0,0,0,0.2)',
       opacity: disabled ? 0.6 : 1,
-      transition: 'transform 0.1s, box-shadow 0.1s',
+      transition: 'transform 0.1s',
       position: 'relative', overflow: 'hidden',
     }}
     onMouseEnter={e => { if (!disabled) e.currentTarget.style.transform = highlight ? 'scale(1.12) translateY(-8px)' : 'scale(1.06) translateY(-4px)'; }}
     onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
   >
-    <div style={{ flex: 1, width: '100%' }}>
-      <DotGrid value={tile.v1} dotPx={7} />
-    </div>
+    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v1} dotPx={7} /></div>
     <div style={{ height: 2, backgroundColor: '#9ca3af', margin: '0 8px', flexShrink: 0 }} />
-    <div style={{ flex: 1, width: '100%' }}>
-      <DotGrid value={tile.v2} dotPx={7} />
-    </div>
+    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v2} dotPx={7} /></div>
     {highlight && !disabled && (
       <div style={{ position: 'absolute', inset: 0, borderRadius: 10, boxShadow: 'inset 0 0 0 2px #facc15', pointerEvents: 'none' }} />
     )}
@@ -104,18 +82,28 @@ const HandDomino = ({ tile, onClick, disabled, highlight }) => (
 
 // ─── TUILE PLATEAU ────────────────────────────────────────────────────────────
 //
-//  Ansyen gwosè (ki te bon) :
-//    Doub  → portrait  w=36  h=68  séparateur H + barre verte
-//    Nòmal → paysage   w=68  h=36  séparateur V
+//  v1 = bout ANTRE  (konekte ak bout plato)
+//  v2 = bout SOTI   (nouvo bout lib)
 //
-//  v1 = bout "ANTRE" (kote ki rejwen plato a)
-//  v2 = bout "SOTI"  (nouvo bout lib)
-//  Lojik afichaj :  [v1 | v2]  —  row-reverse pran swen ranje enpè yo
+//  Afichaj selon direksyon ranje :
 //
-const BoardDomino = ({ tile }) => {
+//  Ranje PÈ  (goch→dwat) :  [v1 | v2]  nòmal
+//    v1 agoch = kote koneksyon ✓   v2 adwat = bout lib ✓
+//
+//  Ranje ENPÈ (dwat→goch, afiche an anvès) :  [v2 | v1]  flip vizyèl
+//    v2 agoch = bout lib ✓   v1 adwat = kote koneksyon ✓
+//    (DOM afiche toujou goch→dwat, donk nou flip v1↔v2 VIZYÈLMAN sèlman)
+//
+//  Doub : toujou portrait, v1===v2 donk flip pa nesesè
+//
+const BoardDomino = ({ tile, flipVisual = false }) => {
   const isDouble = tile.v1 === tile.v2;
+  // Pou afichaj: si flipVisual, nou montre v2 agoch ak v1 adwat
+  const left  = flipVisual ? tile.v2 : tile.v1;
+  const right = flipVisual ? tile.v1 : tile.v2;
 
   if (isDouble) {
+    // Doub: portrait, flip pa nesesè (v1===v2)
     return (
       <div style={{
         flexShrink: 0, width: 36, height: 68,
@@ -132,7 +120,6 @@ const BoardDomino = ({ tile }) => {
       </div>
     );
   }
-
   return (
     <div style={{
       flexShrink: 0, width: 68, height: 36,
@@ -142,42 +129,48 @@ const BoardDomino = ({ tile }) => {
       boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
       overflow: 'hidden',
     }}>
-      <div style={{ flex: 1 }}><DotGrid value={tile.v1} dotPx={5} /></div>
+      <div style={{ flex: 1 }}><DotGrid value={left}  dotPx={5} /></div>
       <div style={{ width: 2, backgroundColor: '#9ca3af', margin: '4px 0', flexShrink: 0 }} />
-      <div style={{ flex: 1 }}><DotGrid value={tile.v2} dotPx={5} /></div>
+      <div style={{ flex: 1 }}><DotGrid value={right} dotPx={5} /></div>
     </div>
   );
 };
 
 // ─── PLATEAU SERPENT ──────────────────────────────────────────────────────────
 //
-//  MODÈL SÈPAN :
+//  MODÈL :
+//  ────────
+//  Ranje 0  goch→dwat :  [T0 v1|v2][T1 v1|v2]...[T6 v1|v2]  ↘
+//  Ranje 1  dwat→goch :  [T13 v1|v2]...[T7 v1|v2]
+//           ← ENPÒTAN: ranje 1 afiche an lòd ENVÈS fizikman
+//              MAIS v1/v2 chak tuil DEJA kòrèk pou lòd sa a :
+//              T7.v1 konekte ak T6.v2 (bout dwat ranje 0)
+//              T7.v2 = nouvo bout lib (AGOCH ranje 1)
+//              Lè nou afiche T7 nòmalman [v1|v2], v1 parèt AGOCH
+//              → men v1 = valè ki ANTRE (konekte ak T6.v2) ← KÒRÈK
+//                 v2 = valè SOTI (nouvo bout goch plato) ← KÒRÈK
 //
-//   Ranje 0  goch→dwat  [T0][T1][T2][T3][T4][T5][T6]  ↘
-//   Ranje 1  dwat→goch  [T13][T12]...[T7]
-//            (row-reverse: v1 parèt adwat, v2 parèt agoch — kòrèk paske
-//             v2 = bout lib = kouran sèpan a ap suiv)
-//                                                        ↙
-//   Ranje 2  goch→dwat  [T14][T15]...
+//  SOLISYON : PA itilize row-reverse.
+//  Pito : kalkile lòd afichaj manyèlman.
+//  Ranje enpè (1,3,...) → afiche tuil yo AN LÒD ENVÈS (slice().reverse())
+//  Epi aliye ADWAT (justifyContent: flex-end)
+//  Konsa :
+//    - T7 parèt ADWAT ranje 1 → v1 adwat = match T6.v2 ✓
+//    - T8 vini apre → v1 adwat match T7.v2 ✓
+//    - ...
+//    - Ranje 2 (goch→dwat) → T14.v1 agoch match T7.v1 (bout goch ranje 1) ✓
 //
-//  TAILLE RANJE :
-//    • Tuil nòmal  w=68, doub w=36
-//    • TILES_PER_ROW = 7 → max lajè ≈ 7×68 + 6×GAP = 502px (pase lekran)
-//    • Nou itilize TILES_PER_ROW=5 pou rete nan ekran mobile (5×68+4×6=364px)
-//
-const TILES_PER_ROW = 5;
+const TILES_PER_ROW = 7;
 const GAP = 6;
-
-// Lajè ranje konplè (maks posib pou TILES_PER_ROW tuil nòmal)
-const MAX_ROW_WIDTH = TILES_PER_ROW * 68 + (TILES_PER_ROW - 1) * GAP;
+const TILE_W = 68;
+const MAX_ROW_WIDTH = TILES_PER_ROW * TILE_W + (TILES_PER_ROW - 1) * GAP; // 512px
 
 const SnakeBoard = ({ board }) => {
   if (!board || board.length === 0) {
     return (
       <div style={{
         display: 'flex', flexDirection: 'column',
-        alignItems: 'center', gap: 8,
-        opacity: 0.4, padding: '20px 0',
+        alignItems: 'center', gap: 8, opacity: 0.4, padding: '20px 0',
       }}>
         <div style={{ width: 68, height: 36, border: '2px dashed #34d399', borderRadius: 8 }} />
         <p style={{ color: '#34d399', fontSize: 11, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>
@@ -187,7 +180,7 @@ const SnakeBoard = ({ board }) => {
     );
   }
 
-  // Mwens ke TILES_PER_ROW → yon sèl ranje, kòmanse GOCH
+  // Yon sèl ranje (< 7 tuil) → goch, nòmal
   if (board.length <= TILES_PER_ROW) {
     return (
       <div style={{
@@ -201,7 +194,7 @@ const SnakeBoard = ({ board }) => {
     );
   }
 
-  // Dekoupe an ranje de TILES_PER_ROW
+  // Dekoupe an ranje
   const rows = [];
   for (let i = 0; i < board.length; i += TILES_PER_ROW) {
     rows.push(board.slice(i, i + TILES_PER_ROW));
@@ -217,29 +210,34 @@ const SnakeBoard = ({ board }) => {
         const isLastRow  = rowIdx === rows.length - 1;
         const isComplete = row.length === TILES_PER_ROW;
 
+        // Ranje enpè (dwat→goch) :
+        // Nou afiche tuil yo AN LÒD ANVÈS (dernye→premye)
+        // + justifyContent: flex-end (kole adwat)
+        // + flipVisual=true pou chak tuil → [v2|v1] agoch→dwat
+        //   sa fè: v1 (antre/koneksyon) parèt ADWAT ✓
+        //          v2 (soti/bout lib)   parèt AGOCH ✓
+        const displayRow = isReverse ? [...row].reverse() : row;
+
         return (
           <div key={rowIdx} style={{
             position: 'relative',
             width: MAX_ROW_WIDTH,
             display: 'flex',
-            flexDirection: isReverse ? 'row-reverse' : 'row',
-            // flex-start :
-            //   ranje pè  (row)         → kole GOCH  ✓
-            //   ranje enpè (row-reverse) → kole DWAT ✓  (paske row-reverse + flex-start = dwat)
-            justifyContent: 'flex-start',
+            flexDirection: 'row',                          // TOUJOU row (pa row-reverse)
+            justifyContent: isReverse ? 'flex-end' : 'flex-start',  // adwat pou enpè, agoch pou pè
             alignItems: 'center',
             gap: GAP,
           }}>
-            {row.map((tile, i) => <BoardDomino key={tile.id || i} tile={tile} />)}
+            {displayRow.map((tile, i) => <BoardDomino key={tile.id || i} tile={tile} flipVisual={isReverse} />)}
 
-            {/* Flèch koneksyon bout ranje → ranje swivan */}
+            {/* Flèch koneksyon */}
             {isComplete && !isLastRow && (
               <div style={{
                 position: 'absolute',
-                [isReverse ? 'left' : 'right']: -(GAP + 18),
+                [isReverse ? 'left' : 'right']: -(GAP + 20),
                 top: '50%', transform: 'translateY(-50%)',
-                color: '#34d399', fontSize: 18, fontWeight: 'bold',
-                textShadow: '0 0 6px rgba(52,211,153,0.7)',
+                color: '#34d399', fontSize: 20, fontWeight: 'bold',
+                textShadow: '0 0 8px rgba(52,211,153,0.8)',
                 lineHeight: 1, userSelect: 'none', pointerEvents: 'none',
               }}>
                 {isReverse ? '↙' : '↘'}
@@ -409,37 +407,53 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
 
   // ─── CONSTRUIRE TUILE ORIENTÉE ───────────────────────────────────────────
   //
-  //  RÈG :
-  //    v1 = valè ANTRE  (rejwen plato a)
-  //    v2 = valè SOTI   (nouvo bout lib)
+  //  RÈG ABSOULI :
+  //  ─────────────
+  //  v1  =  valè "ANTRE"   =  bout ki konekte ak plato (bout goch board[0]
+  //                            oswa bout dwat board[last] selon kote)
+  //  v2  =  valè "SOTI"    =  nouvo bout lib plato a
   //
-  //  board[0].v1     = bout goch kounye a
-  //  board[last].v2  = bout dwat kounye a
+  //  Konsa, PANDAN tout jwèt :
+  //    board[0].v1    = valè bout goch AKTYÈL plato a
+  //    board[last].v2 = valè bout dwat AKTYÈL plato a
   //
-  //  Ajou ADWAT : v1 match rightEnd → v2 = nouvo bout dwat
-  //  Ajou AGOCH : v2 match leftEnd  → v1 = nouvo bout goch
-  //               (si flip nesesè, nou echanj v1↔v2)
+  //  Ajou ADWAT (side='right') :
+  //    Tuil la dwe match board[last].v2
+  //    Si rawTile.v1 === rightEnd → v1=rawTile.v1 (antre), v2=rawTile.v2 (soti)
+  //    Si rawTile.v2 === rightEnd → flip: v1=rawTile.v2 (antre), v2=rawTile.v1 (soti)
+  //    Apre: nouvo board[last].v2 = v2 (nouvo bout dwat) ✓
+  //
+  //  Ajou AGOCH (side='left') :
+  //    Tuil la dwe match board[0].v1
+  //    Si rawTile.v2 === leftEnd  → v1=rawTile.v1 (soti=nouvo goch), v2=rawTile.v2 (antre=match)
+  //    Si rawTile.v1 === leftEnd  → flip: v1=rawTile.v2 (soti), v2=rawTile.v1 (antre=match)
+  //    Apre: nouvo board[0].v1 = v1 (nouvo bout goch) ✓
+  //
+  //  Vizializasyon:
+  //    Ranje pè  (goch→dwat) : [v1 | v2]  — v1 agoch, v2 adwat
+  //    Ranje enpè (dwat→goch): afiche AN ANVÈS — v1 parèt ADWAT, v2 agoch
+  //                             men v1 toujou = bout ki ANTRE (konekte)
+  //                             donc adwat ranje enpè = kote koneksyon ✓
   //
   const buildOrientedTile = (rawTile, side, board) => {
     if (board.length === 0) return { ...rawTile };
-
     const leftEnd  = board[0].v1;
     const rightEnd = board[board.length - 1].v2;
 
     if (side === 'right') {
-      if (rawTile.v1 === rightEnd) return { ...rawTile, v1: rawTile.v1, v2: rawTile.v2 };
+      if (rawTile.v1 === rightEnd) return { ...rawTile };
       return { ...rawTile, v1: rawTile.v2, v2: rawTile.v1 };
     } else {
-      // side === 'left': v2 dwe match leftEnd, v1 = nouvo bout goch
-      if (rawTile.v2 === leftEnd) return { ...rawTile, v1: rawTile.v1, v2: rawTile.v2 };
+      // side='left': v2 dwe === leftEnd, v1 = nouvo bout goch
+      if (rawTile.v2 === leftEnd) return { ...rawTile };
       return { ...rawTile, v1: rawTile.v2, v2: rawTile.v1 };
     }
   };
 
-  // ─── JOUER AVEC DIRECTION FORCÉE ─────────────────────────────────────────
+  // ─── JOUER AVEC DIRECTION ────────────────────────────────────────────────
   const playTileToSide = async (tileIdx, forcedSide) => {
-    const rawTile = myHand[tileIdx];
-    const board   = gameState.board || [];
+    const rawTile   = myHand[tileIdx];
+    const board     = gameState.board || [];
     const finalTile = buildOrientedTile(rawTile, forcedSide, board);
     const newHand   = myHand.filter((_, i) => i !== tileIdx);
     const newBoard  = forcedSide === 'left' ? [finalTile, ...board] : [...board, finalTile];
@@ -454,21 +468,17 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
     if (newHand.length === 0) await finishGame(currentUser.uid, 'tombe');
   };
 
-  // ─── CLIC SUR UNE TUILE ───────────────────────────────────────────────────
+  // ─── CLIC SUR TUILE ───────────────────────────────────────────────────────
   const handlePlayTile = (idx) => {
     if (gameState?.turn !== currentUser.uid || !gameState) return;
     if (!playable.includes(idx)) return;
-
     const tile  = myHand[idx];
     const board = gameState.board || [];
-
     if (board.length === 0) { playTileToSide(idx, 'right'); return; }
-
     const leftEnd  = board[0].v1;
     const rightEnd = board[board.length - 1].v2;
     const fitsLeft  = tile.v1 === leftEnd  || tile.v2 === leftEnd;
     const fitsRight = tile.v1 === rightEnd || tile.v2 === rightEnd;
-
     if (fitsLeft && fitsRight) {
       setPendingPlacement({ tileIdx: idx, tile });
     } else if (fitsRight) {
@@ -482,34 +492,28 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
   const handleDraw = async () => {
     if (gameState?.turn !== currentUser.uid || !gameState) return;
     const deck = gameState.deck || [];
-
     if (deck.length > 0) {
       const newDeck = [...deck];
       const drawn   = newDeck.pop();
       const newHand = [...myHand, drawn];
       const board   = gameState.board || [];
-
       let drawnPlayable = board.length === 0;
       if (!drawnPlayable) {
         const leftEnd  = board[0].v1;
         const rightEnd = board[board.length - 1].v2;
         drawnPlayable = drawn.v1 === leftEnd || drawn.v2 === leftEnd || drawn.v1 === rightEnd || drawn.v2 === rightEnd;
       }
-
       if (drawnPlayable) {
         await update(gameRef, {
-          deck: newDeck,
-          [`hands/${currentUser.uid}`]: newHand,
+          deck: newDeck, [`hands/${currentUser.uid}`]: newHand,
           consecutivePasses: 0,
           lastAction: { by: currentUser.uid, type: 'drew_can_play', tile: drawn },
         });
         showToast('Domino ou pran an ka jwe! Jwe li.', 'bg-green-700', 3000);
       } else {
         await update(gameRef, {
-          deck: newDeck,
-          [`hands/${currentUser.uid}`]: newHand,
-          turn: opponentUid,
-          consecutivePasses: 0,
+          deck: newDeck, [`hands/${currentUser.uid}`]: newHand,
+          turn: opponentUid, consecutivePasses: 0,
           lastAction: { by: currentUser.uid, type: 'drew_passed', tile: drawn },
         });
       }
@@ -564,9 +568,9 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
 
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, #34d399, transparent)' }} />
+          style={{ background: 'radial-gradient(circle,#34d399,transparent)' }} />
         <div className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, #059669, transparent)' }} />
+          style={{ background: 'radial-gradient(circle,#059669,transparent)' }} />
       </div>
 
       {showNetworkAlert && (
@@ -581,18 +585,15 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
       )}
 
-      {/* ══ HEADER ADVERSAIRE ══ */}
+      {/* ══ HEADER ══ */}
       <div className="relative z-10 flex items-center justify-between px-4 py-3"
         style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(52,211,153,0.15)' }}>
-
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg
-              ${opponentOnline ? 'bg-gradient-to-br from-blue-500 to-indigo-600' : 'bg-gray-600'}`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg ${opponentOnline ? 'bg-gradient-to-br from-blue-500 to-indigo-600' : 'bg-gray-600'}`}>
               <User className="w-5 h-5 text-white" />
             </div>
-            <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-emerald-950
-              ${opponentOnline ? 'bg-green-400' : 'bg-red-500 animate-pulse'}`} />
+            <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-emerald-950 ${opponentOnline ? 'bg-green-400' : 'bg-red-500 animate-pulse'}`} />
             {gameState.turn === opponentUid && opponentOnline && (
               <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-yellow-400 animate-ping" />
             )}
@@ -612,50 +613,42 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
             </div>
           </div>
         </div>
-
         <div className="flex items-center gap-1.5 bg-yellow-500/20 border border-yellow-500/40 rounded-xl px-3 py-1.5">
           <Coins className="w-4 h-4 text-yellow-400" />
           <span className="text-yellow-300 font-bold text-sm">{gameData.bet}</span>
         </div>
-
-        <div className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all ${
-          gameState.turn === opponentUid
-            ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/30'
-            : 'bg-white/10 text-white/50'
-        }`}>
+        <div className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all ${gameState.turn === opponentUid ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/30' : 'bg-white/10 text-white/50'}`}>
           {gameState.turn === opponentUid ? '⚡ TOU LI' : 'TANN...'}
         </div>
       </div>
 
       {/* ══ ZONE PLATEAU ══ */}
       <div className="relative flex-1 flex flex-col items-center justify-center overflow-hidden">
-
         {lastAction && lastAction.by === opponentUid && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20
-            bg-black/70 backdrop-blur-sm text-white text-xs px-4 py-1.5 rounded-full border border-white/10 shadow-lg whitespace-nowrap">
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-black/70 backdrop-blur-sm text-white text-xs px-4 py-1.5 rounded-full border border-white/10 shadow-lg whitespace-nowrap">
             {lastAction.type === 'played'      && `${opponentPseudo} jwe [${lastAction.tile?.v1}|${lastAction.tile?.v2}]`}
             {lastAction.type === 'drew'        && `${opponentPseudo} pran yon domino`}
             {lastAction.type === 'drew_passed' && `${opponentPseudo} pran + pase`}
             {lastAction.type === 'passed'      && `${opponentPseudo} pase (pil vid)`}
           </div>
         )}
-
         {justDrewCanPlay && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20
-            bg-green-700 text-white text-xs px-4 py-1.5 rounded-full border border-green-500 shadow-lg whitespace-nowrap animate-pulse">
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-green-700 text-white text-xs px-4 py-1.5 rounded-full border border-green-500 shadow-lg whitespace-nowrap animate-pulse">
             Domino ou pran an ka jwe — jwe li!
           </div>
         )}
 
-        {/* Plateau sèpan — scroll si nesesè */}
         <div style={{
           width: '100%', overflowX: 'auto', overflowY: 'visible',
-          padding: '8px 32px',
+          padding: '12px 40px',
           scrollbarWidth: 'thin', scrollbarColor: '#065f46 transparent',
         }}>
-          <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
+          <div style={{
+            position: 'relative', display: 'flex',
+            justifyContent: 'center', minWidth: 'max-content',
+          }}>
             <div style={{
-              position: 'absolute', inset: 0, borderRadius: 12, opacity: 0.20,
+              position: 'absolute', inset: 0, borderRadius: 12, opacity: 0.18,
               pointerEvents: 'none',
               background: 'repeating-linear-gradient(45deg,#065f46 0px,#065f46 1px,transparent 1px,transparent 14px)',
             }} />
@@ -663,8 +656,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="flex gap-3 mt-2">
+        <div className="flex gap-3 mt-1">
           <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-black/30 rounded-full px-3 py-1">
             <span className="font-bold">{deckCount}</span><span className="opacity-70">nan PIL</span>
           </div>
@@ -679,26 +671,21 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
       </div>
 
-      {/* ══ MAIN DU JOUEUR ══ */}
+      {/* ══ MAIN ══ */}
       <div className="relative z-10"
         style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(16px)', borderTop: '1px solid rgba(52,211,153,0.15)' }}>
-
         <div className="flex items-center justify-between px-4 pt-3 pb-1">
           <div className="flex items-center gap-2">
             <div className="relative">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow">
                 <User className="w-4 h-4 text-white" />
               </div>
-              {isMyTurn && (
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-yellow-400 border-2 border-black animate-pulse" />
-              )}
+              {isMyTurn && <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-yellow-400 border-2 border-black animate-pulse" />}
             </div>
             <span className="text-white font-bold text-sm">{myPseudo}</span>
             <span className="text-emerald-400 text-xs">({myHand.length} kart)</span>
           </div>
-          <div className={`text-xs font-black px-4 py-1.5 rounded-full transition-all duration-300 ${
-            isMyTurn ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/40 scale-105' : 'bg-white/10 text-white/40'
-          }`}>
+          <div className={`text-xs font-black px-4 py-1.5 rounded-full transition-all duration-300 ${isMyTurn ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/40 scale-105' : 'bg-white/10 text-white/40'}`}>
             {isMyTurn ? '⚡ TOU OU' : 'TANN...'}
           </div>
         </div>
@@ -709,8 +696,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
             ? <p className="text-emerald-400 text-sm italic py-6">Men ou vid...</p>
             : myHand.map((tile, i) => (
               <HandDomino
-                key={tile.id || i}
-                tile={tile}
+                key={tile.id || i} tile={tile}
                 onClick={() => handlePlayTile(i)}
                 disabled={!isMyTurn}
                 highlight={isMyTurn && playable.includes(i)}
@@ -720,56 +706,39 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
 
         <div className="flex gap-3 px-4 pb-4 pt-1">
-          <button
-            onClick={handleDraw}
-            disabled={!isMyTurn || hasPlayable}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all ${
-              isMyTurn && !hasPlayable
-                ? 'bg-orange-500 hover:bg-orange-400 text-white shadow-lg active:scale-95'
-                : 'bg-white/5 text-white/20 cursor-not-allowed'
-            }`}>
+          <button onClick={handleDraw} disabled={!isMyTurn || hasPlayable}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all ${isMyTurn && !hasPlayable ? 'bg-orange-500 hover:bg-orange-400 text-white shadow-lg active:scale-95' : 'bg-white/5 text-white/20 cursor-not-allowed'}`}>
             <RotateCcw className="w-4 h-4" />
             {deckCount > 0 ? 'PIL' : 'Pase Tou'}
           </button>
-          <button
-            onClick={() => setShowAbandonConfirm(true)}
+          <button onClick={() => setShowAbandonConfirm(true)}
             className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-red-600/80 hover:bg-red-500 text-white font-bold text-sm transition-all active:scale-95">
-            <ArrowLeft className="w-4 h-4" />
-            Kite
+            <ArrowLeft className="w-4 h-4" /> Kite
           </button>
         </div>
       </div>
 
       {/* ══ POPUP CHOIX CÔTÉ ══ */}
       {pendingPlacement && (
-        <div
-          className="fixed inset-0 z-[220] flex items-end justify-center pb-48"
+        <div className="fixed inset-0 z-[220] flex items-end justify-center pb-48"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-          onClick={() => setPendingPlacement(null)}
-        >
-          <div
-            className="bg-gray-900 border border-yellow-500/40 rounded-2xl p-5 shadow-2xl text-center"
-            onClick={e => e.stopPropagation()}
-          >
+          onClick={() => setPendingPlacement(null)}>
+          <div className="bg-gray-900 border border-yellow-500/40 rounded-2xl p-5 shadow-2xl text-center"
+            onClick={e => e.stopPropagation()}>
             <p className="text-yellow-300 font-bold text-sm mb-4">
               Ki kote wap poze [{pendingPlacement.tile.v1}|{pendingPlacement.tile.v2}]?
             </p>
             <div className="flex gap-4 justify-center">
-              <button
-                onClick={() => { playTileToSide(pendingPlacement.tileIdx, 'left'); setPendingPlacement(null); }}
+              <button onClick={() => { playTileToSide(pendingPlacement.tileIdx, 'left'); setPendingPlacement(null); }}
                 className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all active:scale-95">
-                <ArrowLeftCircle className="w-5 h-5" />
-                Goch
+                <ArrowLeftCircle className="w-5 h-5" /> Goch
               </button>
-              <button
-                onClick={() => { playTileToSide(pendingPlacement.tileIdx, 'right'); setPendingPlacement(null); }}
+              <button onClick={() => { playTileToSide(pendingPlacement.tileIdx, 'right'); setPendingPlacement(null); }}
                 className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl transition-all active:scale-95">
-                Dwat
-                <ArrowRightCircle className="w-5 h-5" />
+                Dwat <ArrowRightCircle className="w-5 h-5" />
               </button>
             </div>
-            <button onClick={() => setPendingPlacement(null)}
-              className="mt-3 text-gray-500 text-xs hover:text-gray-300">Anile</button>
+            <button onClick={() => setPendingPlacement(null)} className="mt-3 text-gray-500 text-xs hover:text-gray-300">Anile</button>
           </div>
         </div>
       )}
@@ -797,14 +766,8 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
               </ul>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setShowAbandonConfirm(false)}
-                className="flex-1 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-bold text-sm">
-                Kontinye Jwe
-              </button>
-              <button onClick={handleAbandonConfirm}
-                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm">
-                Abandone (-{gameData.bet})
-              </button>
+              <button onClick={() => setShowAbandonConfirm(false)} className="flex-1 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-bold text-sm">Kontinye Jwe</button>
+              <button onClick={handleAbandonConfirm} className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm">Abandone (-{gameData.bet})</button>
             </div>
           </div>
         </div>
@@ -814,8 +777,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
       {result && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}>
-          <div className={`w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl
-            ${result.won ? 'border-2 border-yellow-400/60' : 'border-2 border-gray-600/40'}`}
+          <div className={`w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl ${result.won ? 'border-2 border-yellow-400/60' : 'border-2 border-gray-600/40'}`}
             style={{ background: result.won ? 'linear-gradient(145deg,#1a1a2e,#16213e)' : 'linear-gradient(145deg,#1a1a1a,#2d2d2d)' }}>
             <div className={`h-2 w-full ${result.won ? 'bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-500' : 'bg-gradient-to-r from-gray-600 to-gray-700'}`} />
             <div className="p-8 text-center">
@@ -825,9 +787,8 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
                     <div className="w-24 h-24 rounded-full bg-yellow-400/10 border-2 border-yellow-400/30 flex items-center justify-center">
                       <Trophy className="w-12 h-12 text-yellow-400" />
                     </div>
-                    {['top-0 right-0', 'top-2 left-0', 'bottom-0 right-2'].map((pos, i) => (
-                      <div key={i} className={`absolute ${pos} text-yellow-300 text-lg animate-bounce`}
-                        style={{ animationDelay: `${i * 0.15}s` }}>✦</div>
+                    {['top-0 right-0','top-2 left-0','bottom-0 right-2'].map((pos, i) => (
+                      <div key={i} className={`absolute ${pos} text-yellow-300 text-lg animate-bounce`} style={{ animationDelay: `${i * 0.15}s` }}>✦</div>
                     ))}
                   </div>
                 ) : (
@@ -837,9 +798,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
                 )}
               </div>
               <h2 className={`text-3xl font-black mb-1 tracking-tight ${result.won ? 'text-yellow-300' : 'text-gray-300'}`}>
-                {result.won
-                  ? (result.type === 'blokaj' ? 'Ou Genyen!' : (result.type === 'forfait' || result.type === 'abandon') ? 'Forfe!' : 'OU TONBE!')
-                  : (result.type === 'abandon' ? 'Ou Abandone...' : 'Ou Pedi...')}
+                {result.won ? (result.type === 'blokaj' ? 'Ou Genyen!' : (result.type === 'forfait' || result.type === 'abandon') ? 'Forfe!' : 'OU TONBE!') : (result.type === 'abandon' ? 'Ou Abandone...' : 'Ou Pedi...')}
               </h2>
               <p className="text-sm mb-6 opacity-60 text-white">
                 {result.type === 'tombe'   &&  result.won && 'Men ou te vid — viktorya!'}
@@ -849,9 +808,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
                 {result.type === 'abandon' &&  result.won && `${opponentPseudo} abandone pati a`}
                 {result.type === 'abandon' && !result.won && 'Ou kite pati a — penalite aplike'}
               </p>
-              <div className={`rounded-2xl p-5 mb-4 ${result.won
-                ? 'bg-gradient-to-r from-yellow-500/20 to-amber-500/10 border border-yellow-500/30'
-                : 'bg-red-900/20 border border-red-800/30'}`}>
+              <div className={`rounded-2xl p-5 mb-4 ${result.won ? 'bg-gradient-to-r from-yellow-500/20 to-amber-500/10 border border-yellow-500/30' : 'bg-red-900/20 border border-red-800/30'}`}>
                 <div className={`text-4xl font-black ${result.won ? 'text-yellow-300' : 'text-red-400'}`}>
                   {result.won ? `+${result.amount}` : `-${result.amount}`}
                 </div>
@@ -859,19 +816,10 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
                   <Coins className="w-4 h-4 text-yellow-500" />
                   <span className="text-sm text-white">Jeton</span>
                 </div>
-                {result.won && (
-                  <p className="text-xs text-yellow-400/70 mt-2">
-                    Mise ou ({result.amount}) + mise advese ({result.amount}) = +{result.amount} net
-                  </p>
-                )}
+                {result.won && <p className="text-xs text-yellow-400/70 mt-2">Mise ou ({result.amount}) + mise advese ({result.amount}) = +{result.amount} net</p>}
               </div>
-              <button
-                onClick={handleExit}
-                className={`w-full py-4 rounded-2xl font-black text-base transition-all active:scale-95 ${
-                  result.won
-                    ? 'bg-gradient-to-r from-yellow-400 to-amber-400 text-black hover:from-yellow-300 shadow-lg shadow-yellow-500/30'
-                    : 'bg-gray-700 hover:bg-gray-600 text-white'
-                }`}>
+              <button onClick={handleExit}
+                className={`w-full py-4 rounded-2xl font-black text-base transition-all active:scale-95 ${result.won ? 'bg-gradient-to-r from-yellow-400 to-amber-400 text-black hover:from-yellow-300 shadow-lg shadow-yellow-500/30' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>
                 Retounen Lobby
               </button>
             </div>
