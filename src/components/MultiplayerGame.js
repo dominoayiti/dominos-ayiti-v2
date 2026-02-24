@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { User, Coins, ArrowLeft, RotateCcw, Skull, Trophy, Wifi, WifiOff, AlertTriangle } from 'lucide-react';
+import { User, Coins, ArrowLeft, RotateCcw, Skull, Trophy, Wifi, WifiOff, AlertTriangle, ArrowLeftCircle, ArrowRightCircle } from 'lucide-react';
 import { database } from '../firebase-config';
 import { ref, set, onValue, update, get, remove, onDisconnect, serverTimestamp } from 'firebase/database';
 
 // ─── CONSTANTES ───────────────────────────────────────────────────────────────
+const TILES_PER_ROW = 7; // Nombre de tuiles avant de plier (serpent)
+
 const generateDeck = () => {
   const deck = [];
   for (let i = 0; i <= 6; i++)
@@ -23,44 +25,23 @@ const shuffleDeck = (deck) => {
 
 const sumHand = (hand) => (hand || []).reduce((s, t) => s + t.v1 + t.v2, 0);
 
-// ─── DOT PATTERNS (grille 3x3 : index 0‥8) ───────────────────────────────────
-//  0 | 1 | 2
-//  3 | 4 | 5
-//  6 | 7 | 8
+// ─── DOT PATTERNS ─────────────────────────────────────────────────────────────
+// 0 1 2 / 3 4 5 / 6 7 8
 const DOT_PATTERNS = {
-  0: [],
-  1: [4],
-  2: [0, 8],
-  3: [0, 4, 8],
-  4: [0, 2, 6, 8],
-  5: [0, 2, 4, 6, 8],
-  6: [0, 2, 3, 5, 6, 8],
+  0: [], 1: [4], 2: [0, 8], 3: [0, 4, 8],
+  4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8],
 };
 
-// ─── DOT GRID ─────────────────────────────────────────────────────────────────
 const DotGrid = ({ value, dotPx = 7 }) => {
   const dots = DOT_PATTERNS[value] || [];
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(3, 1fr)',
-      gap: 2,
-      width: '100%',
-      height: '100%',
-      padding: 4,
-      boxSizing: 'border-box',
-    }}>
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:2,
+      width:'100%', height:'100%', padding:4, boxSizing:'border-box' }}>
       {Array.from({ length: 9 }, (_, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'center' }}>
           {dots.includes(i) && (
-            <div style={{
-              width: dotPx,
-              height: dotPx,
-              borderRadius: '50%',
-              backgroundColor: '#111827',
-              flexShrink: 0,
-              boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
-            }} />
+            <div style={{ width:dotPx, height:dotPx, borderRadius:'50%',
+              backgroundColor:'#111827', flexShrink:0, boxShadow:'0 1px 2px rgba(0,0,0,0.3)' }} />
           )}
         </div>
       ))}
@@ -68,81 +49,108 @@ const DotGrid = ({ value, dotPx = 7 }) => {
   );
 };
 
-// ─── TUILE MAIN (portrait, w=56 h=112) ───────────────────────────────────────
+// ─── TUILE MAIN (portrait) ────────────────────────────────────────────────────
 const HandDomino = ({ tile, onClick, disabled, highlight }) => (
-  <button
-    onClick={onClick}
-    disabled={disabled}
-    style={{ flexShrink: 0, width: 56, height: 112, display: 'flex', flexDirection: 'column',
-      borderRadius: 12, border: `2px solid ${highlight && !disabled ? '#facc15' : '#d1d5db'}`,
-      background: 'white', cursor: disabled ? 'default' : 'pointer', outline: 'none',
-      boxShadow: highlight && !disabled ? '0 0 16px rgba(250,204,21,0.5), 0 4px 12px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.2)',
-      opacity: disabled ? 0.6 : 1,
-      transition: 'transform 0.1s, box-shadow 0.1s',
-      position: 'relative', overflow: 'hidden',
+  <button onClick={onClick} disabled={disabled}
+    style={{ flexShrink:0, width:56, height:112, display:'flex', flexDirection:'column',
+      borderRadius:12, border:`2px solid ${highlight && !disabled ? '#facc15' : '#d1d5db'}`,
+      background:'white', cursor: disabled ? 'default' : 'pointer', outline:'none',
+      boxShadow: highlight && !disabled
+        ? '0 0 20px rgba(250,204,21,0.6), 0 4px 12px rgba(0,0,0,0.3)'
+        : '0 2px 8px rgba(0,0,0,0.2)',
+      opacity: disabled ? 0.6 : 1, position:'relative', overflow:'hidden',
+      transition:'transform 0.1s', userSelect:'none',
     }}
     onMouseEnter={e => { if (!disabled) e.currentTarget.style.transform = highlight ? 'scale(1.12) translateY(-8px)' : 'scale(1.06) translateY(-4px)'; }}
     onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
   >
-    <div style={{ flex: 1, width: '100%' }}>
-      <DotGrid value={tile.v1} dotPx={7} />
-    </div>
-    <div style={{ height: 2, backgroundColor: '#9ca3af', margin: '0 8px', flexShrink: 0 }} />
-    <div style={{ flex: 1, width: '100%' }}>
-      <DotGrid value={tile.v2} dotPx={7} />
-    </div>
+    <div style={{ flex:1, width:'100%' }}><DotGrid value={tile.v1} dotPx={7} /></div>
+    <div style={{ height:2, backgroundColor:'#9ca3af', margin:'0 8px', flexShrink:0 }} />
+    <div style={{ flex:1, width:'100%' }}><DotGrid value={tile.v2} dotPx={7} /></div>
     {highlight && !disabled && (
-      <div style={{ position: 'absolute', inset: 0, borderRadius: 10, boxShadow: 'inset 0 0 0 2px #facc15', pointerEvents: 'none' }} />
+      <div style={{ position:'absolute', inset:0, borderRadius:10,
+        boxShadow:'inset 0 0 0 2px #facc15', pointerEvents:'none' }} />
     )}
   </button>
 );
 
 // ─── TUILE PLATEAU ────────────────────────────────────────────────────────────
-// Doub  (v1===v2) → portrait  w=36  h=68  séparateur horizontal  + barre verte
-// Autre           → paysage   w=68  h=36  séparateur vertical
+// Doub → portrait (w=34 h=64) + bande verte
+// Autre → paysage (w=64 h=34)
 const BoardDomino = ({ tile }) => {
   const isDouble = tile.v1 === tile.v2;
-
   if (isDouble) {
     return (
-      <div style={{
-        flexShrink: 0, width: 36, height: 68,
-        display: 'flex', flexDirection: 'column',
-        background: 'white', borderRadius: 8,
-        border: '2px solid #6b7280',
-        boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-        overflow: 'hidden', position: 'relative',
-      }}>
-        {/* Barre verte = marqueur double */}
-        <div style={{ height: 3, backgroundColor: '#10b981', flexShrink: 0 }} />
-        <div style={{ flex: 1 }}>
-          <DotGrid value={tile.v1} dotPx={5} />
-        </div>
-        <div style={{ height: 2, backgroundColor: '#9ca3af', margin: '0 4px', flexShrink: 0 }} />
-        <div style={{ flex: 1 }}>
-          <DotGrid value={tile.v2} dotPx={5} />
-        </div>
+      <div style={{ flexShrink:0, width:34, height:64, display:'flex', flexDirection:'column',
+        background:'white', borderRadius:6, border:'2px solid #6b7280',
+        boxShadow:'0 2px 5px rgba(0,0,0,0.25)', overflow:'hidden' }}>
+        <div style={{ height:3, backgroundColor:'#10b981', flexShrink:0 }} />
+        <div style={{ flex:1 }}><DotGrid value={tile.v1} dotPx={5} /></div>
+        <div style={{ height:2, backgroundColor:'#9ca3af', margin:'0 3px', flexShrink:0 }} />
+        <div style={{ flex:1 }}><DotGrid value={tile.v2} dotPx={5} /></div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ flexShrink:0, width:64, height:34, display:'flex', flexDirection:'row',
+      background:'white', borderRadius:6, border:'2px solid #9ca3af',
+      boxShadow:'0 2px 5px rgba(0,0,0,0.2)', overflow:'hidden' }}>
+      <div style={{ flex:1 }}><DotGrid value={tile.v1} dotPx={5} /></div>
+      <div style={{ width:2, backgroundColor:'#9ca3af', margin:'3px 0', flexShrink:0 }} />
+      <div style={{ flex:1 }}><DotGrid value={tile.v2} dotPx={5} /></div>
+    </div>
+  );
+};
+
+// ─── PLATEAU EN SERPENT ───────────────────────────────────────────────────────
+const SnakeBoard = ({ board }) => {
+  if (board.length === 0) {
+    return (
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, opacity:0.4, padding:16 }}>
+        <div style={{ width:64, height:34, border:'2px dashed #34d399', borderRadius:8 }} />
+        <p style={{ color:'#34d399', fontSize:11, fontWeight:600, letterSpacing:2, textTransform:'uppercase' }}>
+          Jwe premye domino
+        </p>
       </div>
     );
   }
 
-  // Paysage
+  // Découper en rangées de TILES_PER_ROW
+  const rows = [];
+  for (let i = 0; i < board.length; i += TILES_PER_ROW) {
+    rows.push(board.slice(i, i + TILES_PER_ROW));
+  }
+
   return (
-    <div style={{
-      flexShrink: 0, width: 68, height: 36,
-      display: 'flex', flexDirection: 'row',
-      background: 'white', borderRadius: 8,
-      border: '2px solid #9ca3af',
-      boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
-      overflow: 'hidden',
-    }}>
-      <div style={{ flex: 1 }}>
-        <DotGrid value={tile.v1} dotPx={5} />
-      </div>
-      <div style={{ width: 2, backgroundColor: '#9ca3af', margin: '4px 0', flexShrink: 0 }} />
-      <div style={{ flex: 1 }}>
-        <DotGrid value={tile.v2} dotPx={5} />
-      </div>
+    <div style={{ display:'flex', flexDirection:'column', gap:6, padding:'8px 4px' }}>
+      {rows.map((row, rowIdx) => {
+        const isReverse = rowIdx % 2 === 1; // Rangées impaires → droite à gauche
+        return (
+          <div key={rowIdx} style={{
+            display:'flex',
+            flexDirection: isReverse ? 'row-reverse' : 'row',
+            alignItems:'center',
+            gap:4,
+            // Connecteur visuel entre rangées (flèche de coin)
+            position:'relative',
+          }}>
+            {row.map((tile, i) => (
+              <BoardDomino key={i} tile={tile} />
+            ))}
+            {/* Indicateur de continuation si rangée pleine */}
+            {row.length === TILES_PER_ROW && rowIdx < rows.length - 1 && (
+              <div style={{
+                position:'absolute',
+                [isReverse ? 'left' : 'right']: -14,
+                top:'50%', transform:'translateY(-50%)',
+                color:'#34d399', fontSize:16, fontWeight:'bold', lineHeight:1,
+              }}>
+                {isReverse ? '↙' : '↘'}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -163,6 +171,9 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
   const [myHand, setMyHand]           = useState([]);
   const [result, setResult]           = useState(null);
   const [playable, setPlayable]       = useState([]);
+
+  // Choix de côté quand une tuile convient aux 2 bouts
+  const [pendingPlacement, setPendingPlacement] = useState(null); // { tileIdx, tile }
 
   const [opponentOnline, setOpponentOnline]     = useState(true);
   const [opponentDiscoAt, setOpponentDiscoAt]   = useState(null);
@@ -187,13 +198,13 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
       if (snap.exists()) return;
       const deck = shuffleDeck(generateDeck());
       await set(gameRef, {
-        status: 'playing', board: [], deck: deck.slice(14),
-        turn: gameData.player1Uid, lastAction: null,
-        consecutivePasses: 0, winner: null, winType: null,
-        startedAt: Date.now(), paused: false,
-        hands: {
-          [gameData.player1Uid]: deck.slice(0, 7),
-          [gameData.player2Uid]: deck.slice(7, 14),
+        status:'playing', board:[], deck:deck.slice(14),
+        turn:gameData.player1Uid, lastAction:null,
+        consecutivePasses:0, winner:null, winType:null,
+        startedAt:Date.now(), paused:false,
+        hands:{
+          [gameData.player1Uid]: deck.slice(0,7),
+          [gameData.player2Uid]: deck.slice(7,14),
         },
       });
     };
@@ -211,11 +222,11 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
       setMyConnected(connected);
       if (connected) {
         setShowNetworkAlert(false);
-        await set(myPresenceRef, { online: true, lastSeen: Date.now() });
-        onDisconnect(myPresenceRef).set({ online: false, lastSeen: serverTimestamp() });
+        await set(myPresenceRef, { online:true, lastSeen:Date.now() });
+        onDisconnect(myPresenceRef).set({ online:false, lastSeen:serverTimestamp() });
       } else {
         setShowNetworkAlert(true);
-        showToast('⚠️ Koneksyon ou feb — ap eseye rekonekte...', 'bg-orange-600', 6000);
+        showToast('Koneksyon ou feb — ap eseye rekonekte...', 'bg-orange-600', 6000);
       }
     });
 
@@ -248,7 +259,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
     return () => {
       unsubConn(); unsubOpp();
       clearTimeout(presenceCleanup.current);
-      set(myPresenceRef, { online: false, lastSeen: Date.now() }).catch(() => {});
+      set(myPresenceRef, { online:false, lastSeen:Date.now() }).catch(() => {});
     };
   }, []); // eslint-disable-line
 
@@ -263,13 +274,13 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
       if (data.status === 'finished' && data.winner && !resultHandled.current) {
         resultHandled.current = true;
         const iWon = data.winner === currentUser.uid;
-        setResult({ won: iWon, type: data.winType, amount: parseInt(gameData.bet) });
+        setResult({ won:iWon, type:data.winType, amount:parseInt(gameData.bet) });
       }
     });
     return () => unsub();
   }, []); // eslint-disable-line
 
-  // ─── MISE À JOUR JETONS (chaque joueur met à jour seulement SES propres jetons) ──
+  // ─── MISE À JOUR JETONS ────────────────────────────────────────────────────
   useEffect(() => {
     if (!result || tokensUpdated.current) return;
     tokensUpdated.current = true;
@@ -290,7 +301,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
     const rightEnd = board[board.length - 1].v2;
     setPlayable(
       myHand
-        .map((t, i) => (t.v1 === leftEnd || t.v2 === leftEnd || t.v1 === rightEnd || t.v2 === rightEnd ? i : -1))
+        .map((t, i) => (t.v1===leftEnd||t.v2===leftEnd||t.v1===rightEnd||t.v2===rightEnd ? i : -1))
         .filter(i => i !== -1)
     );
   }, [myHand, gameState]);
@@ -298,56 +309,123 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
   // ─── FIN DE PARTIE ─────────────────────────────────────────────────────────
   const finishGame = useCallback(async (winnerUid, winType) => {
     try {
-      await update(gameRef, { status: 'finished', winner: winnerUid, winType, finishedAt: Date.now() });
-    } catch (e) { console.error('finishGame:', e); }
+      await update(gameRef, { status:'finished', winner:winnerUid, winType, finishedAt:Date.now() });
+    } catch(e) { console.error('finishGame:', e); }
   }, [gameRef]);
 
-  // ─── JOUER UNE TUILE ───────────────────────────────────────────────────────
-  const handlePlayTile = async (idx) => {
-    if (gameState?.turn !== currentUser.uid || !gameState) return;
-    if (!playable.includes(idx)) return;
-    const tile  = { ...myHand[idx] };
+  // ─── JOUER AVEC DIRECTION FORCÉE ──────────────────────────────────────────
+  const playTileToSide = async (tileIdx, forcedSide) => {
+    const tile  = { ...myHand[tileIdx] };
     const board = gameState.board || [];
-    let position = 'right';
+    let position  = forcedSide; // 'left' | 'right'
     let finalTile = { ...tile };
+
     if (board.length > 0) {
       const leftEnd  = board[0].v1;
       const rightEnd = board[board.length - 1].v2;
-      if      (tile.v1 === rightEnd) { position = 'right'; }
-      else if (tile.v2 === rightEnd) { position = 'right'; finalTile = { ...tile, v1: tile.v2, v2: tile.v1 }; }
-      else if (tile.v2 === leftEnd)  { position = 'left'; }
-      else if (tile.v1 === leftEnd)  { position = 'left';  finalTile = { ...tile, v1: tile.v2, v2: tile.v1 }; }
+
+      if (forcedSide === 'right') {
+        if (tile.v1 === rightEnd)      { /* v1 exposé à gauche OK */ }
+        else if (tile.v2 === rightEnd) { finalTile = { ...tile, v1:tile.v2, v2:tile.v1 }; }
+      } else {
+        if (tile.v2 === leftEnd)       { /* v2 à droite, donc v1 exposé à gauche OK */ }
+        else if (tile.v1 === leftEnd)  { finalTile = { ...tile, v1:tile.v2, v2:tile.v1 }; }
+      }
     }
-    const newHand  = myHand.filter((_, i) => i !== idx);
+
+    const newHand  = myHand.filter((_, i) => i !== tileIdx);
     const newBoard = position === 'left' ? [finalTile, ...board] : [...board, finalTile];
+
     await update(gameRef, {
-      board: newBoard, [`hands/${currentUser.uid}`]: newHand,
-      turn: opponentUid, consecutivePasses: 0,
-      lastAction: { by: currentUser.uid, type: 'played', tile: finalTile },
+      board: newBoard,
+      [`hands/${currentUser.uid}`]: newHand,
+      turn: opponentUid,
+      consecutivePasses: 0,
+      lastAction: { by:currentUser.uid, type:'played', tile:finalTile },
     });
+
     if (newHand.length === 0) await finishGame(currentUser.uid, 'tombe');
   };
 
-  // ─── PIOCHER / PASSER ──────────────────────────────────────────────────────
+  // ─── CLIC SUR UNE TUILE DE MAIN ───────────────────────────────────────────
+  const handlePlayTile = (idx) => {
+    if (gameState?.turn !== currentUser.uid || !gameState) return;
+    if (!playable.includes(idx)) return;
+
+    const tile  = myHand[idx];
+    const board = gameState.board || [];
+
+    // Plateau vide → jouer directement
+    if (board.length === 0) {
+      playTileToSide(idx, 'right');
+      return;
+    }
+
+    const leftEnd  = board[0].v1;
+    const rightEnd = board[board.length - 1].v2;
+    const fitsLeft  = tile.v1 === leftEnd  || tile.v2 === leftEnd;
+    const fitsRight = tile.v1 === rightEnd || tile.v2 === rightEnd;
+
+    if (fitsLeft && fitsRight) {
+      // Ambiguë → demander le côté
+      setPendingPlacement({ tileIdx: idx, tile });
+    } else if (fitsRight) {
+      playTileToSide(idx, 'right');
+    } else {
+      playTileToSide(idx, 'left');
+    }
+  };
+
+  // ─── PIL (Pran nan pil) — anciennement Piocher ────────────────────────────
   const handleDraw = async () => {
     if (gameState?.turn !== currentUser.uid || !gameState) return;
     const deck = gameState.deck || [];
+
     if (deck.length > 0) {
       const newDeck = [...deck];
       const drawn   = newDeck.pop();
-      await update(gameRef, {
-        deck: newDeck, [`hands/${currentUser.uid}`]: [...myHand, drawn],
-        turn: opponentUid, consecutivePasses: 0,
-        lastAction: { by: currentUser.uid, type: 'drew', tile: drawn },
-      });
+      const newHand = [...myHand, drawn];
+
+      // ✅ Vérifier si la tuile piochée est jouable
+      const board     = gameState.board || [];
+      let drawnPlayable = false;
+      if (board.length === 0) {
+        drawnPlayable = true;
+      } else {
+        const leftEnd  = board[0].v1;
+        const rightEnd = board[board.length - 1].v2;
+        drawnPlayable = drawn.v1===leftEnd||drawn.v2===leftEnd||drawn.v1===rightEnd||drawn.v2===rightEnd;
+      }
+
+      if (drawnPlayable) {
+        // ✅ La tuile convient → le joueur garde son tour et peut jouer
+        await update(gameRef, {
+          deck: newDeck,
+          [`hands/${currentUser.uid}`]: newHand,
+          // PAS de changement de turn !
+          consecutivePasses: 0,
+          lastAction: { by:currentUser.uid, type:'drew_can_play', tile:drawn },
+        });
+        showToast('Domino ou pran an ka jwe! Jwe li.', 'bg-green-700', 3000);
+      } else {
+        // ✅ Pas jouable → passer à l'adversaire
+        await update(gameRef, {
+          deck: newDeck,
+          [`hands/${currentUser.uid}`]: newHand,
+          turn: opponentUid,
+          consecutivePasses: 0,
+          lastAction: { by:currentUser.uid, type:'drew_passed', tile:drawn },
+        });
+      }
     } else {
+      // Pioche vide → passer
       const newPasses = (gameState.consecutivePasses || 0) + 1;
       await update(gameRef, {
         consecutivePasses: newPasses, turn: opponentUid,
-        lastAction: { by: currentUser.uid, type: 'passed' },
+        lastAction: { by:currentUser.uid, type:'passed' },
       });
       if (newPasses >= 2) {
-        const opHand  = gameState.hands?.[opponentUid] || [];
+        const opHand = gameState.hands?.[opponentUid] || [];
         await finishGame(sumHand(myHand) <= sumHand(opHand) ? currentUser.uid : opponentUid, 'blokaj');
       }
     }
@@ -361,8 +439,8 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
 
   // ─── EXIT ──────────────────────────────────────────────────────────────────
   const handleExit = useCallback(async () => {
-    try { await remove(gameRef); } catch (_) {}
-    try { await remove(ref(database, `gamePresence/${gameData.sessionId}`)); } catch (_) {}
+    try { await remove(gameRef); } catch(_) {}
+    try { await remove(ref(database, `gamePresence/${gameData.sessionId}`)); } catch(_) {}
     onExit();
   }, [gameRef, gameData.sessionId, onExit]);
 
@@ -384,24 +462,27 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
   const lastAction        = gameState.lastAction;
   const discoSeconds      = opponentDiscoAt ? Math.floor((Date.now() - opponentDiscoAt) / 1000) : 0;
 
+  // Vérifier si la dernière tuile piochée peut encore être jouée (pour affichage)
+  const justDrewCanPlay = lastAction?.by === currentUser.uid && lastAction?.type === 'drew_can_play';
+
   return (
     <div className="fixed inset-0 z-[150] flex flex-col overflow-hidden"
-      style={{ background: 'radial-gradient(ellipse at top, #064e3b 0%, #022c22 60%, #011a15 100%)' }}>
+      style={{ background:'radial-gradient(ellipse at top, #064e3b 0%, #022c22 60%, #011a15 100%)' }}>
 
+      {/* Décoration fond */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, #34d399, transparent)' }} />
+          style={{ background:'radial-gradient(circle,#34d399,transparent)' }} />
         <div className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full opacity-10"
-          style={{ background: 'radial-gradient(circle, #059669, transparent)' }} />
+          style={{ background:'radial-gradient(circle,#059669,transparent)' }} />
       </div>
 
+      {/* Bannières réseau */}
       {showNetworkAlert && (
         <div className="relative z-20 bg-orange-600 text-white text-center text-xs py-2 px-4 flex items-center justify-center gap-2 animate-pulse">
-          <WifiOff className="w-4 h-4" />
-          <span>Koneksyon ou feb — ap eseye rekonekte...</span>
+          <WifiOff className="w-4 h-4" /><span>Koneksyon ou feb — ap eseye rekonekte...</span>
         </div>
       )}
-
       {!opponentOnline && (
         <div className="relative z-20 bg-yellow-500 text-black text-center text-xs py-2 px-4 flex items-center justify-center gap-2 font-semibold">
           <Wifi className="w-4 h-4" />
@@ -409,9 +490,9 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
       )}
 
-      {/* ══ HEADER ══ */}
+      {/* ══ HEADER ADVERSAIRE ══ */}
       <div className="relative z-10 flex items-center justify-between px-4 py-3"
-        style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(52,211,153,0.15)' }}>
+        style={{ background:'rgba(0,0,0,0.35)', backdropFilter:'blur(12px)', borderBottom:'1px solid rgba(52,211,153,0.15)' }}>
 
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -434,7 +515,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
             </div>
             <div className="flex gap-[3px] mt-1 items-center">
               {Array.from({ length: Math.min(opponentHandCount, 10) }, (_, i) => (
-                <div key={i} style={{ width: 8, height: 18, borderRadius: 2, background: '#065f46', border: '1px solid #047857', flexShrink: 0 }} />
+                <div key={i} style={{ width:8, height:18, borderRadius:2, background:'#065f46', border:'1px solid #047857', flexShrink:0 }} />
               ))}
               <span className="text-emerald-400 text-xs ml-1 font-bold">{opponentHandCount}</span>
             </div>
@@ -455,46 +536,43 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
       </div>
 
-      {/* ══ PLATEAU ══ */}
+      {/* ══ PLATEAU EN SERPENT ══ */}
       <div className="relative flex-1 flex flex-col items-center justify-center overflow-hidden">
 
+        {/* Notification dernière action */}
         {lastAction && lastAction.by === opponentUid && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20
             bg-black/70 backdrop-blur-sm text-white text-xs px-4 py-1.5 rounded-full border border-white/10 shadow-lg whitespace-nowrap">
-            {lastAction.type === 'played' && `${opponentPseudo} jwe [${lastAction.tile?.v1}|${lastAction.tile?.v2}]`}
-            {lastAction.type === 'drew'   && `${opponentPseudo} pran yon domino`}
-            {lastAction.type === 'passed' && `${opponentPseudo} pase (pioche vid)`}
+            {lastAction.type === 'played'      && `${opponentPseudo} jwe [${lastAction.tile?.v1}|${lastAction.tile?.v2}]`}
+            {lastAction.type === 'drew'        && `${opponentPseudo} pran yon domino`}
+            {lastAction.type === 'drew_passed' && `${opponentPseudo} pran + pase`}
+            {lastAction.type === 'passed'      && `${opponentPseudo} pase (pil vid)`}
           </div>
         )}
 
-        {/* Zone plateau avec scroll horizontal */}
-        <div className="w-full overflow-x-auto overflow-y-hidden px-4"
-          style={{ scrollbarWidth: 'thin', scrollbarColor: '#065f46 transparent' }}>
-          <div className="relative flex items-center justify-center py-5 px-6"
-            style={{ minWidth: 'max-content', margin: '0 auto', minHeight: 120 }}>
-            {/* Fond quadrillé tapis */}
-            <div className="absolute inset-0 rounded-2xl opacity-20"
-              style={{ background: 'repeating-linear-gradient(45deg,#065f46 0px,#065f46 1px,transparent 1px,transparent 14px)' }} />
+        {/* Notification "tuile piochée jouable" */}
+        {justDrewCanPlay && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20
+            bg-green-700 text-white text-xs px-4 py-1.5 rounded-full border border-green-500 shadow-lg whitespace-nowrap animate-pulse">
+            Domino ou pran an ka jwe — jwe li!
+          </div>
+        )}
 
-            {board.length === 0 ? (
-              <div className="relative flex flex-col items-center gap-3 opacity-40 py-4">
-                <div style={{ width: 68, height: 36, border: '2px dashed #34d399', borderRadius: 8 }} />
-                <p className="text-emerald-400 text-xs font-semibold tracking-wider uppercase">Jwe premye domino</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                {board.map((tile, i) => (
-                  <BoardDomino key={i} tile={tile} />
-                ))}
-              </div>
-            )}
+        {/* Zone serpent scrollable */}
+        <div className="w-full overflow-auto px-4 py-3 flex items-center justify-center"
+          style={{ maxHeight:'100%', scrollbarWidth:'thin', scrollbarColor:'#065f46 transparent' }}>
+          <div className="relative inline-block">
+            {/* Fond quadrillé */}
+            <div className="absolute inset-0 rounded-2xl opacity-15 pointer-events-none"
+              style={{ background:'repeating-linear-gradient(45deg,#065f46 0px,#065f46 1px,transparent 1px,transparent 14px)' }} />
+            <SnakeBoard board={board} />
           </div>
         </div>
 
         {/* Stats */}
-        <div className="flex gap-3 mt-1">
+        <div className="flex gap-3">
           <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-black/30 rounded-full px-3 py-1">
-            <span className="font-bold">{deckCount}</span><span className="opacity-70">nan pioche</span>
+            <span className="font-bold">{deckCount}</span><span className="opacity-70">nan PIL</span>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-black/30 rounded-full px-3 py-1">
             <span className="font-bold">{board.length}</span><span className="opacity-70">sou plato</span>
@@ -507,9 +585,9 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
       </div>
 
-      {/* ══ MAIN ══ */}
+      {/* ══ MAIN DU JOUEUR ══ */}
       <div className="relative z-10"
-        style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(16px)', borderTop: '1px solid rgba(52,211,153,0.15)' }}>
+        style={{ background:'rgba(0,0,0,0.55)', backdropFilter:'blur(16px)', borderTop:'1px solid rgba(52,211,153,0.15)' }}>
 
         <div className="flex items-center justify-between px-4 pt-3 pb-1">
           <div className="flex items-center gap-2">
@@ -532,7 +610,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
 
         <div className="flex gap-2 overflow-x-auto px-4 py-3 items-end justify-center"
-          style={{ scrollbarWidth: 'none', minHeight: 128 }}>
+          style={{ scrollbarWidth:'none', minHeight:128 }}>
           {myHand.length === 0
             ? <p className="text-emerald-400 text-sm italic py-6">Men ou vid...</p>
             : myHand.map((tile, i) => (
@@ -555,7 +633,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
                 : 'bg-white/5 text-white/20 cursor-not-allowed'
             }`}>
             <RotateCcw className="w-4 h-4" />
-            {deckCount > 0 ? 'Pran Domino' : 'Pase Tou'}
+            {deckCount > 0 ? 'PIL' : 'Pase Tou'}
           </button>
           <button onClick={() => setShowAbandonConfirm(true)}
             className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-red-600/80 hover:bg-red-500 text-white font-bold text-sm transition-all active:scale-95">
@@ -565,10 +643,40 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
         </div>
       </div>
 
+      {/* ══ POPUP CHOIX CÔTÉ (ambiguë) ══ */}
+      {pendingPlacement && (
+        <div className="fixed inset-0 z-[220] flex items-end justify-center pb-48"
+          style={{ background:'rgba(0,0,0,0.5)', backdropFilter:'blur(4px)' }}
+          onClick={() => setPendingPlacement(null)}>
+          <div className="bg-gray-900 border border-yellow-500/40 rounded-2xl p-5 shadow-2xl text-center"
+            onClick={e => e.stopPropagation()}>
+            <p className="text-yellow-300 font-bold text-sm mb-4">
+              Ki kote wap poze [{pendingPlacement.tile.v1}|{pendingPlacement.tile.v2}]?
+            </p>
+            <div className="flex gap-4 justify-center">
+              <button
+                onClick={() => { playTileToSide(pendingPlacement.tileIdx, 'left'); setPendingPlacement(null); }}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all active:scale-95">
+                <ArrowLeftCircle className="w-5 h-5" />
+                Goch
+              </button>
+              <button
+                onClick={() => { playTileToSide(pendingPlacement.tileIdx, 'right'); setPendingPlacement(null); }}
+                className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl transition-all active:scale-95">
+                Dwat
+                <ArrowRightCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <button onClick={() => setPendingPlacement(null)}
+              className="mt-3 text-gray-500 text-xs hover:text-gray-300">Anile</button>
+          </div>
+        </div>
+      )}
+
       {/* ══ POPUP ABANDON ══ */}
       {showAbandonConfirm && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)' }}>
+          style={{ background:'rgba(0,0,0,0.85)', backdropFilter:'blur(6px)' }}>
           <div className="bg-gray-900 border border-red-500/40 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center">
@@ -604,7 +712,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
       {/* ══ MODAL RÉSULTAT ══ */}
       {result && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}>
+          style={{ background:'rgba(0,0,0,0.85)', backdropFilter:'blur(8px)' }}>
           <div className={`w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl
             ${result.won ? 'border-2 border-yellow-400/60' : 'border-2 border-gray-600/40'}`}
             style={{ background: result.won ? 'linear-gradient(145deg,#1a1a2e,#16213e)' : 'linear-gradient(145deg,#1a1a1a,#2d2d2d)' }}>
@@ -618,7 +726,7 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
                     </div>
                     {['top-0 right-0','top-2 left-0','bottom-0 right-2'].map((pos, i) => (
                       <div key={i} className={`absolute ${pos} text-yellow-300 text-lg animate-bounce`}
-                        style={{ animationDelay: `${i * 0.15}s` }}>✦</div>
+                        style={{ animationDelay:`${i * 0.15}s` }}>✦</div>
                     ))}
                   </div>
                 ) : (
@@ -629,16 +737,16 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
               </div>
               <h2 className={`text-3xl font-black mb-1 tracking-tight ${result.won ? 'text-yellow-300' : 'text-gray-300'}`}>
                 {result.won
-                  ? (result.type === 'blokaj' ? 'Ou Genyen!' : (result.type === 'forfait' || result.type === 'abandon') ? 'Forfe!' : 'OU TONBE!')
-                  : (result.type === 'abandon' ? 'Ou Abandone...' : 'Ou Pedi...')}
+                  ? (result.type==='blokaj' ? 'Ou Genyen!' : (result.type==='forfait'||result.type==='abandon') ? 'Forfe!' : 'OU TONBE!')
+                  : (result.type==='abandon' ? 'Ou Abandone...' : 'Ou Pedi...')}
               </h2>
               <p className="text-sm mb-6 opacity-60 text-white">
-                {result.type === 'tombe'   && result.won  && 'Men ou te vid — viktorya!'}
-                {result.type === 'tombe'   && !result.won && `${opponentPseudo} fini anvan ou`}
-                {result.type === 'blokaj'  && 'Pati bloke — mwens pwen genyen'}
-                {result.type === 'forfait' && result.won  && `${opponentPseudo} dekonekte twop lontan`}
-                {result.type === 'abandon' && result.won  && `${opponentPseudo} abandone pati a`}
-                {result.type === 'abandon' && !result.won && 'Ou kite pati a — penalite aplike'}
+                {result.type==='tombe'   && result.won  && 'Men ou te vid — viktorya!'}
+                {result.type==='tombe'   && !result.won && `${opponentPseudo} fini anvan ou`}
+                {result.type==='blokaj'  && 'Pati bloke — mwens pwen genyen'}
+                {result.type==='forfait' && result.won  && `${opponentPseudo} dekonekte twop lontan`}
+                {result.type==='abandon' && result.won  && `${opponentPseudo} abandone pati a`}
+                {result.type==='abandon' && !result.won && 'Ou kite pati a — penalite aplike'}
               </p>
               <div className={`rounded-2xl p-5 mb-4 ${result.won
                 ? 'bg-gradient-to-r from-yellow-500/20 to-amber-500/10 border border-yellow-500/30'
