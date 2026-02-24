@@ -31,18 +31,21 @@ const DOT_PATTERNS = {
 
 const DotGrid = ({ value, dotPx = 7 }) => {
   const dots = DOT_PATTERNS[value] || [];
+  // Padding minimal — jis ase pou pwen pa kole bò
+  const pad = 2;
+  const gap = 1;
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 2,
-      width: '100%', height: '100%', padding: 4, boxSizing: 'border-box',
+      display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap,
+      width: '100%', height: '100%', padding: pad, boxSizing: 'border-box',
     }}>
       {Array.from({ length: 9 }, (_, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {dots.includes(i) && (
             <div style={{
               width: dotPx, height: dotPx, borderRadius: '50%',
-              backgroundColor: '#111827', flexShrink: 0,
-              boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
+              backgroundColor: '#1a1a1a', flexShrink: 0,
+              boxShadow: '0 1px 2px rgba(0,0,0,0.4)',
             }} />
           )}
         </div>
@@ -96,9 +99,10 @@ const HandDomino = ({ tile, onClick, disabled, highlight }) => (
 //  TW = 46 (lajè long), TH = 24 (wotè kout)
 //  Doub okipe slot TW men sèlman TH lajè (sentre)
 //
-const TW = 32;        // lajè tuil orizontal
-const TH = 18;        // wotè tuil orizontal = lajè kwen/doub
-const DP = 3;         // tay pwen
+const TW = 42;        // lajè tuil orizontal
+const TH = 24;        // wotè tuil orizontal = lajè kwen/doub
+const DP = 5;         // tay pwen
+const GAP = 2;        // espas ant tuil yo         // tay pwen
 // BOARD_W kalkile dinamikman nan SnakeBoard
 
 // ─── COMPOSANT DOMINO ─────────────────────────────────────────────────────────
@@ -138,7 +142,7 @@ const DominoTile = ({ a, b, horiz = true, isDouble = false }) => {
     return (
       <div style={{ ...style, flexDirection: 'row' }}>
         <div style={{ flex: 1 }}><DotGrid value={a} dotPx={dotPx} /></div>
-        <div style={{ width: 1, backgroundColor: '#9a9080', margin: '4px 0', flexShrink: 0 }} />
+        <div style={{ width: 1, backgroundColor: '#9a9080', margin: '2px 0', flexShrink: 0 }} />
         <div style={{ flex: 1 }}><DotGrid value={b} dotPx={dotPx} /></div>
       </div>
     );
@@ -148,7 +152,7 @@ const DominoTile = ({ a, b, horiz = true, isDouble = false }) => {
   return (
     <div style={style}>
       <div style={{ flex: 1 }}><DotGrid value={a} dotPx={dotPx} /></div>
-      <div style={{ height: 1, backgroundColor: '#9a9080', margin: '0 4px', flexShrink: 0 }} />
+      <div style={{ height: 1, backgroundColor: '#9a9080', margin: '0 2px', flexShrink: 0 }} />
       <div style={{ flex: 1 }}><DotGrid value={b} dotPx={dotPx} /></div>
     </div>
   );
@@ -229,10 +233,10 @@ const SnakeBoard = ({ board }) => {
         // Doub portrait: lajè reyèl = TH (pa TW), sentre vètikal
         const dOffY = -Math.round((TW - TH) / 2);
         items.push({ tile, x: cx, y: rowY + dOffY, horiz: false, a, b, isDouble: true });
-        cx += TH;  // avanse sèlman TH (lajè reyèl doub) — elimine gap
+        cx += TH + GAP;  // doub + espas
       } else {
         items.push({ tile, x: cx, y: rowY, horiz: true, a, b, isDouble: false });
-        cx += TW;
+        cx += TW + GAP;
       }
       seg += 1;
 
@@ -244,7 +248,7 @@ const SnakeBoard = ({ board }) => {
       items.push({ tile, x: cx, y: rowY, horiz: false, a: tile.v1, b: tile.v2, isDouble: false });
 
       // Nouvo ranje: kòmanse anba kwen
-      rowY += TW;
+      rowY += TW + GAP;
       // cx pou nouvo ranje = menm x ke kwen (bò agoch kwen)
       cx   = items[items.length - 1].x;
       seg  = 0;
