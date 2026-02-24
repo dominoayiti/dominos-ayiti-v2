@@ -71,9 +71,9 @@ const HandDomino = ({ tile, onClick, disabled, highlight }) => (
     onMouseEnter={e => { if (!disabled) e.currentTarget.style.transform = highlight ? 'scale(1.12) translateY(-8px)' : 'scale(1.06) translateY(-4px)'; }}
     onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
   >
-    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v1} dotPx={6} /></div>
+    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v1} dotPx={5} /></div>
     <div style={{ height: 1, backgroundColor: '#9ca3af', margin: '0 6px', flexShrink: 0 }} />
-    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v2} dotPx={6} /></div>
+    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v2} dotPx={5} /></div>
     {highlight && !disabled && (
       <div style={{ position: 'absolute', inset: 0, borderRadius: 10, boxShadow: 'inset 0 0 0 2px #facc15', pointerEvents: 'none' }} />
     )}
@@ -96,9 +96,9 @@ const HandDomino = ({ tile, onClick, disabled, highlight }) => (
 //  TW = 46 (lajè long), TH = 24 (wotè kout)
 //  Doub okipe slot TW men sèlman TH lajè (sentre)
 //
-const TW = 62;        // lajè tuil orizontal
-const TH = 34;        // wotè tuil orizontal = lajè kwen/doub
-const DP = 7;         // tay pwen
+const TW = 32;        // lajè tuil orizontal
+const TH = 18;        // wotè tuil orizontal = lajè kwen/doub
+const DP = 3;         // tay pwen
 // BOARD_W kalkile dinamikman nan SnakeBoard
 
 // ─── COMPOSANT DOMINO ─────────────────────────────────────────────────────────
