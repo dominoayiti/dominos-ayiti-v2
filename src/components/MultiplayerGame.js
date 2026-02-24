@@ -56,7 +56,7 @@ const HandDomino = ({ tile, onClick, disabled, highlight }) => (
   <button
     onClick={onClick} disabled={disabled}
     style={{
-      flexShrink: 0, width: 56, height: 112,
+      flexShrink: 0, width: 44, height: 88,
       display: 'flex', flexDirection: 'column',
       borderRadius: 12,
       border: `2px solid ${highlight && !disabled ? '#facc15' : '#d1d5db'}`,
@@ -71,108 +71,124 @@ const HandDomino = ({ tile, onClick, disabled, highlight }) => (
     onMouseEnter={e => { if (!disabled) e.currentTarget.style.transform = highlight ? 'scale(1.12) translateY(-8px)' : 'scale(1.06) translateY(-4px)'; }}
     onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}
   >
-    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v1} dotPx={7} /></div>
-    <div style={{ height: 2, backgroundColor: '#9ca3af', margin: '0 8px', flexShrink: 0 }} />
-    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v2} dotPx={7} /></div>
+    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v1} dotPx={6} /></div>
+    <div style={{ height: 1, backgroundColor: '#9ca3af', margin: '0 6px', flexShrink: 0 }} />
+    <div style={{ flex: 1, width: '100%' }}><DotGrid value={tile.v2} dotPx={6} /></div>
     {highlight && !disabled && (
       <div style={{ position: 'absolute', inset: 0, borderRadius: 10, boxShadow: 'inset 0 0 0 2px #facc15', pointerEvents: 'none' }} />
     )}
   </button>
 );
 
-// ─── TUILE PLATEAU ────────────────────────────────────────────────────────────
+// ─── DIMENSYON ────────────────────────────────────────────────────────────────
 //
-//  v1 = bout ANTRE  (konekte ak bout plato)
-//  v2 = bout SOTI   (nouvo bout lib)
+//  Chema serpentin:
+//   [H][H][D][H][H][H][H][V]   D=doub (portrait nan ranje H)
+//                          ↓
+//   [H][H][H][H][D][H][H][V]
+//   ↓
+//   [H][H][H][H][H][H][H]
 //
-//  Afichaj selon direksyon ranje :
+//  H = orizontal : TW lajè, TH wotè
+//  D = doub      : TH lajè, TW wotè  (portrait, nan sant slot TW)
+//  V = kwen      : TH lajè, TW wotè  (portrait, nan bout ranje)
 //
-//  Ranje PÈ  (goch→dwat) :  [v1 | v2]  nòmal
-//    v1 agoch = kote koneksyon ✓   v2 adwat = bout lib ✓
+//  TW = 46 (lajè long), TH = 24 (wotè kout)
+//  Doub okipe slot TW men sèlman TH lajè (sentre)
 //
-//  Ranje ENPÈ (dwat→goch, afiche an anvès) :  [v2 | v1]  flip vizyèl
-//    v2 agoch = bout lib ✓   v1 adwat = kote koneksyon ✓
-//    (DOM afiche toujou goch→dwat, donk nou flip v1↔v2 VIZYÈLMAN sèlman)
-//
-//  Doub : toujou portrait, v1===v2 donk flip pa nesesè
-//
-const BoardDomino = ({ tile, flipVisual = false }) => {
-  const isDouble = tile.v1 === tile.v2;
-  // Pou afichaj: si flipVisual, nou montre v2 agoch ak v1 adwat
-  const left  = flipVisual ? tile.v2 : tile.v1;
-  const right = flipVisual ? tile.v1 : tile.v2;
+const TW = 62;        // lajè tuil orizontal
+const TH = 34;        // wotè tuil orizontal = lajè kwen/doub
+const DP = 7;         // tay pwen
+// BOARD_W kalkile dinamikman nan SnakeBoard
 
-  if (isDouble) {
-    // Doub: portrait, flip pa nesesè (v1===v2)
+// ─── COMPOSANT DOMINO ─────────────────────────────────────────────────────────
+//
+//  DominoTile jere 3 ka:
+//    horiz=true,  isDouble=false → [a | b]  TW × TH
+//    horiz=false, isDouble=false → [a]      TH × TW  (kwen/vètikal)
+//                                  [b]
+//    isDouble=true, horiz=true   → portrait TH × TW, sentre nan slot TW
+//    isDouble=true, horiz=false  → portrait TH × TW  (menm jan)
+//
+const DominoTile = ({ a, b, horiz = true, isDouble = false }) => {
+  const dotPx = DP;
+
+  // Tout doub yo toujou portrait (TH lajè × TW wotè)
+  // Kwen yo toujou portrait (TH lajè × TW wotè)
+  // Sèlman tuil nòmal orizontal ki TW × TH
+  const isPortrait = isDouble || !horiz;
+
+  const w = isPortrait ? TH : TW;
+  const h = isPortrait ? TW : TH;
+
+  const style = {
+    display: 'flex',
+    flexDirection: 'column',  // toujou column — on pivote les valeurs
+    width: w, height: h,
+    background: '#fefcf0',
+    borderRadius: 5,
+    border: '1.5px solid #c0b896',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.7)',
+    overflow: 'hidden',
+    flexShrink: 0,
+  };
+
+  // Pou tuil orizontal nòmal, fòk nou rotate — utilisé flex row
+  if (!isPortrait) {
     return (
-      <div style={{
-        flexShrink: 0, width: 36, height: 68,
-        display: 'flex', flexDirection: 'column',
-        background: 'white', borderRadius: 8,
-        border: '2px solid #6b7280',
-        boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-        overflow: 'hidden',
-      }}>
-        <div style={{ height: 3, backgroundColor: '#10b981', flexShrink: 0 }} />
-        <div style={{ flex: 1 }}><DotGrid value={tile.v1} dotPx={5} /></div>
-        <div style={{ height: 2, backgroundColor: '#9ca3af', margin: '0 4px', flexShrink: 0 }} />
-        <div style={{ flex: 1 }}><DotGrid value={tile.v2} dotPx={5} /></div>
+      <div style={{ ...style, flexDirection: 'row' }}>
+        <div style={{ flex: 1 }}><DotGrid value={a} dotPx={dotPx} /></div>
+        <div style={{ width: 1, backgroundColor: '#9a9080', margin: '4px 0', flexShrink: 0 }} />
+        <div style={{ flex: 1 }}><DotGrid value={b} dotPx={dotPx} /></div>
       </div>
     );
   }
+
+  // Portrait (doub oswa kwen vètikal)
   return (
-    <div style={{
-      flexShrink: 0, width: 68, height: 36,
-      display: 'flex', flexDirection: 'row',
-      background: 'white', borderRadius: 8,
-      border: '2px solid #9ca3af',
-      boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
-      overflow: 'hidden',
-    }}>
-      <div style={{ flex: 1 }}><DotGrid value={left}  dotPx={5} /></div>
-      <div style={{ width: 2, backgroundColor: '#9ca3af', margin: '4px 0', flexShrink: 0 }} />
-      <div style={{ flex: 1 }}><DotGrid value={right} dotPx={5} /></div>
+    <div style={style}>
+      <div style={{ flex: 1 }}><DotGrid value={a} dotPx={dotPx} /></div>
+      <div style={{ height: 1, backgroundColor: '#9a9080', margin: '0 4px', flexShrink: 0 }} />
+      <div style={{ flex: 1 }}><DotGrid value={b} dotPx={dotPx} /></div>
     </div>
   );
 };
 
-// ─── PLATEAU SERPENT ──────────────────────────────────────────────────────────
+
+// ─── PLATEAU (chema foto referans) ──────────────────────────────────────────
 //
-//  MODÈL :
-//  ────────
-//  Ranje 0  goch→dwat :  [T0 v1|v2][T1 v1|v2]...[T6 v1|v2]  ↘
-//  Ranje 1  dwat→goch :  [T13 v1|v2]...[T7 v1|v2]
-//           ← ENPÒTAN: ranje 1 afiche an lòd ENVÈS fizikman
-//              MAIS v1/v2 chak tuil DEJA kòrèk pou lòd sa a :
-//              T7.v1 konekte ak T6.v2 (bout dwat ranje 0)
-//              T7.v2 = nouvo bout lib (AGOCH ranje 1)
-//              Lè nou afiche T7 nòmalman [v1|v2], v1 parèt AGOCH
-//              → men v1 = valè ki ANTRE (konekte ak T6.v2) ← KÒRÈK
-//                 v2 = valè SOTI (nouvo bout goch plato) ← KÒRÈK
+//  Chema reyèl (foto matador):
 //
-//  SOLISYON : PA itilize row-reverse.
-//  Pito : kalkile lòd afichaj manyèlman.
-//  Ranje enpè (1,3,...) → afiche tuil yo AN LÒD ENVÈS (slice().reverse())
-//  Epi aliye ADWAT (justifyContent: flex-end)
-//  Konsa :
-//    - T7 parèt ADWAT ranje 1 → v1 adwat = match T6.v2 ✓
-//    - T8 vini apre → v1 adwat match T7.v2 ✓
-//    - ...
-//    - Ranje 2 (goch→dwat) → T14.v1 agoch match T7.v1 (bout goch ranje 1) ✓
+//  [H][H][H][H][H][H][H][V]        ← ranje 1, kwen ADWAT
+//                          [H][H]... ← ranje 2 kontinye ADWAT (aliye anba kwen)
+//                          [V]       ← kwen 2 ADWAT
+//                          [H]...    ← ranje 3 ADWAT toujou
 //
-const TILES_PER_ROW = 7;
-const GAP = 6;
-const TILE_W = 68;
-const MAX_ROW_WIDTH = TILES_PER_ROW * TILE_W + (TILES_PER_ROW - 1) * GAP; // 512px
+//  ✦ Chak ranje toujou ale ADWAT (goch→dwat)
+//  ✦ Kwen toujou ADWAT — li aliye bò dwat ranje anwo a
+//  ✦ Ranje anba a kòmanse nan menm x ke kwen (bò dwat)
+//  ✦ Tout ranje "monte" (justify-bottom) — ranje pi kout parèt anba
+//
+//  Layout final:
+//    Ranje 1:  x=0..7*TW,  y=0
+//    Kwen 1:   x=7*TW,     y=0    (wotè TW, debòde anba)
+//    Ranje 2:  x=7*TW...,  y=TW   (kòmanse nan bò dwat kwen)
+//    Kwen 2:   x=7*TW+len2*TW,    y=TW
+//    etc.
+//
+//  Pou afichaj: nou kalkile y_max (ranje ki pi ba) epi nou flip tout y
+//  pou ranje 1 parèt ANBA (align-bottom) — non, pito nou kite natirèl:
+//  ranje 1 anwo, ranje 2 anba — menm jan ak foto
+//
+//  KWEN: v1=bò ki kole ak dènye tuil ranje anwo, v2=bò ki kole ak premye tuil ranje anba
+//
+const ROW_MAX  = 7;   // maks tuil orizontal pa ranje anvan kwen
 
 const SnakeBoard = ({ board }) => {
   if (!board || board.length === 0) {
     return (
-      <div style={{
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', gap: 8, opacity: 0.4, padding: '20px 0',
-      }}>
-        <div style={{ width: 68, height: 36, border: '2px dashed #34d399', borderRadius: 8 }} />
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, opacity: 0.4, padding: '20px 0' }}>
+        <div style={{ width: TW, height: TH, border: '2px dashed #34d399', borderRadius: 4 }} />
         <p style={{ color: '#34d399', fontSize: 11, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>
           Jwe premye domino
         </p>
@@ -180,72 +196,80 @@ const SnakeBoard = ({ board }) => {
     );
   }
 
-  // Yon sèl ranje (< 7 tuil) → goch, nòmal
-  if (board.length <= TILES_PER_ROW) {
-    return (
-      <div style={{
-        width: MAX_ROW_WIDTH,
-        display: 'flex', flexDirection: 'row',
-        justifyContent: 'flex-start', alignItems: 'center',
-        gap: GAP, padding: '8px 0',
-      }}>
-        {board.map((tile, i) => <BoardDomino key={tile.id || i} tile={tile} />)}
-      </div>
-    );
+  // ── Kalkile pozisyon chak tuil ─────────────────────────────────────────────
+  //
+  //  Kurseur:
+  //    rowX  = x kote ranje aktyèl la kòmanse
+  //    rowY  = y anwo ranje aktyèl
+  //    cx    = x kurseur aktyèl (avanse adwat)
+  //    seg   = kantite tuil H nan ranje aktyèl (0..ROW_MAX-1 nòmal, ROW_MAX = kwen)
+  //
+  //  Kwen: plase nan (cx, rowY), wotè TW, lajè TH
+  //  Apre kwen: nouvo ranje kòmanse nan (cx, rowY + TW)
+  //             cx rete menm (kwen ak ranje anba a aliye agoch)
+  //             WAIT — nan foto, ranje anba kòmanse nan bò AGOCH kwen
+  //             Kwen x = cx, ranje anba x = cx (menm x)
+  //
+  const items = [];
+  let cx = 0;
+  let rowY = 0;
+  let seg = 0;
+
+  for (let i = 0; i < board.length; i++) {
+    const tile     = board[i];
+    const isCorner = seg === ROW_MAX;
+    const isDouble = tile.v1 === tile.v2;
+
+    if (!isCorner) {
+      // ── Tuil orizontal (oswa doub portrait) ──
+      const a = tile.v1;  // v1 = bò antre (goch), v2 = bò soti (dwat)
+      const b = tile.v2;
+
+      if (isDouble) {
+        // Doub portrait: lajè reyèl = TH (pa TW), sentre vètikal
+        const dOffY = -Math.round((TW - TH) / 2);
+        items.push({ tile, x: cx, y: rowY + dOffY, horiz: false, a, b, isDouble: true });
+        cx += TH;  // avanse sèlman TH (lajè reyèl doub) — elimine gap
+      } else {
+        items.push({ tile, x: cx, y: rowY, horiz: true, a, b, isDouble: false });
+        cx += TW;
+      }
+      seg += 1;
+
+    } else {
+      // ── Kwen vètikal ADWAT ──
+      // Plase jis apre dènye tuil H (cx = x kwen)
+      // v1 = bò ki kole ak ranje anwo (antre pa wotè)
+      // v2 = bò ki kole ak ranje anba (soti pa ba)
+      items.push({ tile, x: cx, y: rowY, horiz: false, a: tile.v1, b: tile.v2, isDouble: false });
+
+      // Nouvo ranje: kòmanse anba kwen
+      rowY += TW;
+      // cx pou nouvo ranje = menm x ke kwen (bò agoch kwen)
+      cx   = items[items.length - 1].x;
+      seg  = 0;
+    }
   }
 
-  // Dekoupe an ranje
-  const rows = [];
-  for (let i = 0; i < board.length; i += TILES_PER_ROW) {
-    rows.push(board.slice(i, i + TILES_PER_ROW));
+  // ── Bounding box ──────────────────────────────────────────────────────────
+  let maxX = 0, maxY = 0, minY = 0;
+  for (const it of items) {
+    const w = it.horiz ? TW : TH;
+    const h = it.horiz ? TH : TW;
+    maxX = Math.max(maxX, it.x + w);
+    maxY = Math.max(maxY, it.y + h);
+    minY = Math.min(minY, it.y);
   }
+  const offsetAll = minY < 0 ? -minY : 0;
+  const totalH    = maxY + offsetAll;
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column',
-      alignItems: 'flex-start', gap: GAP + 2,
-    }}>
-      {rows.map((row, rowIdx) => {
-        const isReverse  = rowIdx % 2 === 1;
-        const isLastRow  = rowIdx === rows.length - 1;
-        const isComplete = row.length === TILES_PER_ROW;
-
-        // Ranje enpè (dwat→goch) :
-        // Nou afiche tuil yo AN LÒD ANVÈS (dernye→premye)
-        // + justifyContent: flex-end (kole adwat)
-        // + flipVisual=true pou chak tuil → [v2|v1] agoch→dwat
-        //   sa fè: v1 (antre/koneksyon) parèt ADWAT ✓
-        //          v2 (soti/bout lib)   parèt AGOCH ✓
-        const displayRow = isReverse ? [...row].reverse() : row;
-
-        return (
-          <div key={rowIdx} style={{
-            position: 'relative',
-            width: MAX_ROW_WIDTH,
-            display: 'flex',
-            flexDirection: 'row',                          // TOUJOU row (pa row-reverse)
-            justifyContent: isReverse ? 'flex-end' : 'flex-start',  // adwat pou enpè, agoch pou pè
-            alignItems: 'center',
-            gap: GAP,
-          }}>
-            {displayRow.map((tile, i) => <BoardDomino key={tile.id || i} tile={tile} flipVisual={isReverse} />)}
-
-            {/* Flèch koneksyon */}
-            {isComplete && !isLastRow && (
-              <div style={{
-                position: 'absolute',
-                [isReverse ? 'left' : 'right']: -(GAP + 20),
-                top: '50%', transform: 'translateY(-50%)',
-                color: '#34d399', fontSize: 20, fontWeight: 'bold',
-                textShadow: '0 0 8px rgba(52,211,153,0.8)',
-                lineHeight: 1, userSelect: 'none', pointerEvents: 'none',
-              }}>
-                {isReverse ? '↙' : '↘'}
-              </div>
-            )}
-          </div>
-        );
-      })}
+    <div style={{ position: 'relative', width: maxX, height: totalH }}>
+      {items.map(({ tile, x: ix, y: iy, horiz, a, b, isDouble }, idx) => (
+        <div key={tile.id || idx} style={{ position: 'absolute', left: ix, top: iy + offsetAll }}>
+          <DominoTile a={a} b={b} horiz={horiz} isDouble={isDouble} />
+        </div>
+      ))}
     </div>
   );
 };
@@ -406,35 +430,6 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
   }, [gameRef]);
 
   // ─── CONSTRUIRE TUILE ORIENTÉE ───────────────────────────────────────────
-  //
-  //  RÈG ABSOULI :
-  //  ─────────────
-  //  v1  =  valè "ANTRE"   =  bout ki konekte ak plato (bout goch board[0]
-  //                            oswa bout dwat board[last] selon kote)
-  //  v2  =  valè "SOTI"    =  nouvo bout lib plato a
-  //
-  //  Konsa, PANDAN tout jwèt :
-  //    board[0].v1    = valè bout goch AKTYÈL plato a
-  //    board[last].v2 = valè bout dwat AKTYÈL plato a
-  //
-  //  Ajou ADWAT (side='right') :
-  //    Tuil la dwe match board[last].v2
-  //    Si rawTile.v1 === rightEnd → v1=rawTile.v1 (antre), v2=rawTile.v2 (soti)
-  //    Si rawTile.v2 === rightEnd → flip: v1=rawTile.v2 (antre), v2=rawTile.v1 (soti)
-  //    Apre: nouvo board[last].v2 = v2 (nouvo bout dwat) ✓
-  //
-  //  Ajou AGOCH (side='left') :
-  //    Tuil la dwe match board[0].v1
-  //    Si rawTile.v2 === leftEnd  → v1=rawTile.v1 (soti=nouvo goch), v2=rawTile.v2 (antre=match)
-  //    Si rawTile.v1 === leftEnd  → flip: v1=rawTile.v2 (soti), v2=rawTile.v1 (antre=match)
-  //    Apre: nouvo board[0].v1 = v1 (nouvo bout goch) ✓
-  //
-  //  Vizializasyon:
-  //    Ranje pè  (goch→dwat) : [v1 | v2]  — v1 agoch, v2 adwat
-  //    Ranje enpè (dwat→goch): afiche AN ANVÈS — v1 parèt ADWAT, v2 agoch
-  //                             men v1 toujou = bout ki ANTRE (konekte)
-  //                             donc adwat ranje enpè = kote koneksyon ✓
-  //
   const buildOrientedTile = (rawTile, side, board) => {
     if (board.length === 0) return { ...rawTile };
     const leftEnd  = board[0].v1;
@@ -444,7 +439,6 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
       if (rawTile.v1 === rightEnd) return { ...rawTile };
       return { ...rawTile, v1: rawTile.v2, v2: rawTile.v1 };
     } else {
-      // side='left': v2 dwe === leftEnd, v1 = nouvo bout goch
       if (rawTile.v2 === leftEnd) return { ...rawTile };
       return { ...rawTile, v1: rawTile.v2, v2: rawTile.v1 };
     }
@@ -623,9 +617,10 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
       </div>
 
       {/* ══ ZONE PLATEAU ══ */}
-      <div className="relative flex-1 flex flex-col items-center justify-center overflow-hidden">
+      <div className="relative flex-1 flex flex-col" style={{ overflow: 'hidden', minHeight: 0 }}>
+        {/* Notifikasyon aksyon */}
         {lastAction && lastAction.by === opponentUid && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-black/70 backdrop-blur-sm text-white text-xs px-4 py-1.5 rounded-full border border-white/10 shadow-lg whitespace-nowrap">
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 bg-black/70 backdrop-blur-sm text-white text-xs px-3 py-1 rounded-full border border-white/10 shadow-lg whitespace-nowrap">
             {lastAction.type === 'played'      && `${opponentPseudo} jwe [${lastAction.tile?.v1}|${lastAction.tile?.v2}]`}
             {lastAction.type === 'drew'        && `${opponentPseudo} pran yon domino`}
             {lastAction.type === 'drew_passed' && `${opponentPseudo} pran + pase`}
@@ -633,38 +628,39 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
           </div>
         )}
         {justDrewCanPlay && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-green-700 text-white text-xs px-4 py-1.5 rounded-full border border-green-500 shadow-lg whitespace-nowrap animate-pulse">
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 bg-green-700 text-white text-xs px-3 py-1 rounded-full border border-green-500 shadow-lg whitespace-nowrap animate-pulse">
             Domino ou pran an ka jwe — jwe li!
           </div>
         )}
 
+        {/* ── PLATO: pran tout espas, sentre SnakeBoard ── */}
         <div style={{
-          width: '100%', overflowX: 'auto', overflowY: 'visible',
-          padding: '12px 40px',
-          scrollbarWidth: 'thin', scrollbarColor: '#065f46 transparent',
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+          overflow: 'auto',
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#065f46 rgba(0,0,0,0.1)',
         }}>
           <div style={{
-            position: 'relative', display: 'flex',
-            justifyContent: 'center', minWidth: 'max-content',
-          }}>
-            <div style={{
-              position: 'absolute', inset: 0, borderRadius: 12, opacity: 0.18,
-              pointerEvents: 'none',
-              background: 'repeating-linear-gradient(45deg,#065f46 0px,#065f46 1px,transparent 1px,transparent 14px)',
-            }} />
-            <SnakeBoard board={board} />
-          </div>
+            position: 'absolute', inset: 0, opacity: 0.08, pointerEvents: 'none',
+            background: 'repeating-linear-gradient(45deg,#065f46 0px,#065f46 1px,transparent 1px,transparent 12px)',
+          }} />
+          <SnakeBoard board={board} />
         </div>
 
-        <div className="flex gap-3 mt-1">
-          <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-black/30 rounded-full px-3 py-1">
+        {/* ── Stats: NAN PIL / SOU PLATO — tout anba ── */}
+        <div className="flex gap-2 justify-center pb-2 pt-1" style={{ flexShrink: 0 }}>
+          <div className="flex items-center gap-1 text-xs text-emerald-400 bg-black/30 rounded-full px-2.5 py-0.5">
             <span className="font-bold">{deckCount}</span><span className="opacity-70">nan PIL</span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-black/30 rounded-full px-3 py-1">
+          <div className="flex items-center gap-1 text-xs text-emerald-400 bg-black/30 rounded-full px-2.5 py-0.5">
             <span className="font-bold">{board.length}</span><span className="opacity-70">sou plato</span>
           </div>
           {(gameState.consecutivePasses || 0) > 0 && (
-            <div className="text-xs text-orange-400 bg-orange-500/10 rounded-full px-3 py-1 border border-orange-500/30">
+            <div className="text-xs text-orange-400 bg-orange-500/10 rounded-full px-2.5 py-0.5 border border-orange-500/30">
               ⚠️ {gameState.consecutivePasses} pas
             </div>
           )}
@@ -690,8 +686,8 @@ const MultiplayerGame = ({ gameData, currentUser, onExit }) => {
           </div>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto px-4 py-3 items-end justify-center"
-          style={{ scrollbarWidth: 'none', minHeight: 128 }}>
+        <div className="flex gap-2 overflow-x-auto px-3 py-2 items-end justify-center"
+          style={{ scrollbarWidth: 'none', minHeight: 96 }}>
           {myHand.length === 0
             ? <p className="text-emerald-400 text-sm italic py-6">Men ou vid...</p>
             : myHand.map((tile, i) => (
